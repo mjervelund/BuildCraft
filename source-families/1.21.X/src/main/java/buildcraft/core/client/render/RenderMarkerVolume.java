@@ -31,6 +31,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Direction.Axis;
 import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 public class RenderMarkerVolume implements BlockEntityRenderer<TileMarkerVolume>, LegacyLaserBlockEntityRenderer<TileMarkerVolume> {
@@ -57,6 +58,13 @@ public class RenderMarkerVolume implements BlockEntityRenderer<TileMarkerVolume>
 	@Override
 	public boolean shouldRender(TileMarkerVolume marker, Vec3 cameraPos) {
 		return true;
+	}
+
+	// The connection lasers reach far past the marker block: cull against the tile's (unbounded) box, not the
+	// renderer's default one-block box, or the lines vanish whenever the marker itself is off screen.
+	@Override
+	public AABB getRenderBoundingBox(TileMarkerVolume marker) {
+		return marker.getRenderBoundingBox();
 	}
     
     @Override
