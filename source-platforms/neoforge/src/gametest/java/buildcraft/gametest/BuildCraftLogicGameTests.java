@@ -153,6 +153,39 @@ public final class BuildCraftLogicGameTests {
         helper.succeed();
     }
 
+    @GameTest(templateNamespace = BCLib.MODID, template = EMPTY_TEMPLATE, timeoutTicks = 20)
+    public static void statementReadReplacesWrongParameterTypes(GameTestHelper helper) throws Exception {
+        // A client can send, and a save can hold, any registered parameter type in any slot; statements cast them.
+        FillerManager.registry = FillerRegistry.INSTANCE;
+        buildcraft.lib.statement.FullStatement<buildcraft.builders.internal.filler.legacy.IFillerPattern> sent =
+            new buildcraft.lib.statement.FullStatement<>(buildcraft.builders.filler.FillerType.INSTANCE, 4, null);
+        sent.set(BCBuildersStatements.PATTERN_PYRAMID);
+        sent.set(0, buildcraft.builders.snapshot.pattern.parameter.PatternParameterYDir.DOWN);
+        sent.set(1, PatternParameterHollow.HOLLOW);
+
+        buildcraft.lib.statement.FullStatement<buildcraft.builders.internal.filler.legacy.IFillerPattern> fromBuffer =
+            new buildcraft.lib.statement.FullStatement<>(buildcraft.builders.filler.FillerType.INSTANCE, 4, null);
+        PacketBufferBC buffer = new PacketBufferBC(Unpooled.buffer());
+        try {
+            sent.writeToBuffer(buffer);
+            fromBuffer.readFromBuffer(buffer);
+        } finally {
+            buffer.release();
+        }
+        buildcraft.lib.statement.FullStatement<buildcraft.builders.internal.filler.legacy.IFillerPattern> fromNbt =
+            new buildcraft.lib.statement.FullStatement<>(buildcraft.builders.filler.FillerType.INSTANCE, 4, null);
+        fromNbt.readFromNbt(sent.writeToNbt());
+
+        for (buildcraft.lib.statement.FullStatement<?> read : List.of(fromBuffer, fromNbt)) {
+            require(helper, read.get() == BCBuildersStatements.PATTERN_PYRAMID, "pattern changed on read");
+            require(helper, read.get(0) == buildcraft.builders.snapshot.pattern.parameter.PatternParameterYDir.DOWN,
+                "a parameter of the right type was replaced");
+            require(helper, read.get(1) == BCBuildersStatements.PATTERN_PYRAMID.createParameter(1),
+                "a parameter of the wrong type was kept: " + read.get(1));
+        }
+        helper.succeed();
+    }
+
     @GameTest(templateNamespace = BCLib.MODID, template = EMPTY_TEMPLATE, timeoutTicks = 200)
     public static void hollowHemispheresMatchTheCorrespondingHalfOfAFullSphere(GameTestHelper helper) {
         FillerManager.registry = FillerRegistry.INSTANCE;
