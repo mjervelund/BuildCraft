@@ -5,6 +5,10 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
 
 import buildcraft.lib.internal.debug.BCLog;
 
@@ -20,10 +24,19 @@ public final class SavedDataCompat {
     private SavedDataCompat() {}
 
     /**
+     * Legacy ids already checked per level. Callers run this before every {@code computeIfAbsent}, including
+     * per-tick lookups, but the storage only reads the file on the first call, so one check per level is enough.
+     */
+    private static final Map<ServerLevel, Set<String>> CHECKED = new WeakHashMap<>();
+
+    /**
      * Moves an existing pre-26.1 {@code data/<legacyName>.dat} file to the location
      * selected by the 26.1 {@link SavedDataType} id. Existing new-format data wins.
      */
     public static void migrateLegacyFlatFile(ServerLevel level, SavedDataType<?> type, String legacyName) {
+        synchronized (CHECKED) {
+            if (!CHECKED.computeIfAbsent(level, ignored -> new HashSet<>()).add(legacyName)) return;
+        }
         Path dataRoot = dimensionRoot(level).resolve("data");
         Path legacy = dataRoot.resolve(legacyName + ".dat");
         Identifier id = type.id();
