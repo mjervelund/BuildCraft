@@ -6,6 +6,11 @@ import java.util.UUID;
 
 /** Compatibility accessors for Mojang's record-style GameProfile fields. */
 public final class GameProfileCompat {
+    // GameProfile is final, so the accessors are resolved once instead of on every call (owner and permission checks
+    // run per machine action).
+    private static final Method ID = find("id", "getId");
+    private static final Method NAME = find("name", "getName");
+
     private GameProfileCompat() {
     }
 
@@ -13,7 +18,7 @@ public final class GameProfileCompat {
         if (profile == null) {
             return null;
         }
-        Object value = call(profile, "id", "getId");
+        Object value = call(ID, profile);
         return value instanceof UUID uuid ? uuid : null;
     }
 
@@ -21,19 +26,29 @@ public final class GameProfileCompat {
         if (profile == null) {
             return null;
         }
-        Object value = call(profile, "name", "getName");
+        Object value = call(NAME, profile);
         return value instanceof String name ? name : null;
     }
 
-    private static Object call(GameProfile profile, String first, String fallback) {
+    private static Method find(String first, String fallback) {
         for (String methodName : new String[] { first, fallback }) {
             try {
-                Method method = profile.getClass().getMethod(methodName);
-                return method.invoke(profile);
-            } catch (ReflectiveOperationException ignored) {
+                return GameProfile.class.getMethod(methodName);
+            } catch (NoSuchMethodException ignored) {
                 // Try the next spelling.
             }
         }
         return null;
+    }
+
+    private static Object call(Method method, GameProfile profile) {
+        if (method == null) {
+            return null;
+        }
+        try {
+            return method.invoke(profile);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
     }
 }
