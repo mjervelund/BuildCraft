@@ -97,6 +97,10 @@ public class TileChute extends TileBC_Neptune implements IDebuggable, MenuProvid
     }
 
     private void putInNearInventories(Direction currentSide) {
+        if (inv.isEmpty()) {
+            // Nothing to push: skip the per-tick neighbour block entity and entity box queries.
+            return;
+        }
         boolean[] didWork = { false };
         List<Direction> sides = new ArrayList<>(Arrays.asList(Direction.values()));
         Collections.shuffle(sides, new Random());
