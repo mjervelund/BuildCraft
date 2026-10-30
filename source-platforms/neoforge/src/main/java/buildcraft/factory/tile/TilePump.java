@@ -271,6 +271,9 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
         }
         scanInProgress = false;
         queueBuilt = true;
+        // Only the scan uses these; the visited set covers the whole pool and would otherwise live until the next rebuild.
+        scanFrontier.clear();
+        scanChecked.clear();
         nextPos();
     }
 
