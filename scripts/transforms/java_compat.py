@@ -786,7 +786,6 @@ def upgrade_symbols(text: str, *, minecraft: str, relative: str) -> str:
 
     # 1.21.11 API-shape compatibility for NBT, registries, rendering, recipes and GUI calls.
     text = _rewrite_1_21_11_typed_nbt_contains(text)
-    text = text.replace("level.neighborChanged(getBlockState(), currentPos.offset(side.getUnitVec3i()), BCFactoryBlocks.FLOOD_GATE_BLOCK.get(),\n                                    currentPos, false);", "level.neighborChanged(getBlockState(), currentPos.offset(side.getUnitVec3i()), BCFactoryBlocks.FLOOD_GATE_BLOCK.get(),\n                                    null, false);")
     text = text.replace("level.neighborChanged(worldPosition.relative(previousDirection), sourceBlock, worldPosition);", "level.neighborChanged(worldPosition.relative(previousDirection), sourceBlock, null);")
     text = text.replace("level.neighborChanged(worldPosition.relative(current), sourceBlock, worldPosition);", "level.neighborChanged(worldPosition.relative(current), sourceBlock, null);")
     text = text.replace("guiGraphics.renderComponentTooltip(", "RenderCompat.renderComponentTooltip(guiGraphics, ")
