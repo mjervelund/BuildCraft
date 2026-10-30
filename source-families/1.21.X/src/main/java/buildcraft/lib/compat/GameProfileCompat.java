@@ -14,7 +14,7 @@ public final class GameProfileCompat {
         if (profile == null) {
             return null;
         }
-        Object value = call(profile, "id", "getId");
+        Object value = call(profile, ID);
         return value instanceof UUID uuid ? uuid : null;
     }
 
@@ -22,19 +22,40 @@ public final class GameProfileCompat {
         if (profile == null) {
             return null;
         }
-        Object value = call(profile, "name", "getName");
+        Object value = call(profile, NAME);
         return value instanceof String name ? name : null;
     }
 
-    private static Object call(GameProfile profile, String first, String fallback) {
-        for (String methodName : new String[] { first, fallback }) {
-            try {
-                Method method = profile.getClass().getMethod(methodName);
-                return method.invoke(profile);
-            } catch (ReflectiveOperationException ignored) {
-                // Try the next spelling.
+    // Owner ids are read on permission checks and in machine ticks. Resolving the accessor with Class.getMethod on
+    // every call was the costly part, so resolve it once per GameProfile class.
+    private static final ClassValue<Method> ID = accessor("id", "getId");
+    private static final ClassValue<Method> NAME = accessor("name", "getName");
+
+    private static ClassValue<Method> accessor(String first, String fallback) {
+        return new ClassValue<>() {
+            @Override
+            protected Method computeValue(Class<?> type) {
+                for (String methodName : new String[] { first, fallback }) {
+                    try {
+                        return type.getMethod(methodName);
+                    } catch (NoSuchMethodException ignored) {
+                        // Try the next spelling.
+                    }
+                }
+                return null;
             }
+        };
+    }
+
+    private static Object call(GameProfile profile, ClassValue<Method> accessor) {
+        Method method = accessor.get(profile.getClass());
+        if (method == null) {
+            return null;
         }
-        return null;
+        try {
+            return method.invoke(profile);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
     }
 }
