@@ -98,6 +98,11 @@ public enum SimpleRobotRegistryProvider implements IRobotRegistryProvider {
         }
 
         private void setLevel(@Nullable Level level) {
+            // get() runs on every getRegistry() call, several times per robot per tick. Stations added later get the
+            // level in putStation, so once this level is set and its leases initialized there is nothing to redo.
+            if (level == this.level && restoredLeasesInitialized) {
+                return;
+            }
             this.level = level;
             if (level != null && !level.isClientSide && !restoredLeasesInitialized) {
                 restoredLeasesInitialized = true;
@@ -131,10 +136,13 @@ public enum SimpleRobotRegistryProvider implements IRobotRegistryProvider {
                 }
             }
 
-            robots.put(robot.getRobotId(), robot);
-            unloadedRobotIds.remove(robot.getRobotId());
-            restoredLeaseDeadlines.remove(robot.getRobotId());
-            registryMarkDirty();
+            // Robots call this every tick. Only mark the registry dirty when it actually changed.
+            boolean changed = robots.put(robot.getRobotId(), robot) != robot;
+            changed |= unloadedRobotIds.remove(robot.getRobotId());
+            changed |= restoredLeaseDeadlines.remove(robot.getRobotId()) != null;
+            if (changed) {
+                registryMarkDirty();
+            }
         }
 
         @Override
