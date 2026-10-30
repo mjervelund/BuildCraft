@@ -91,6 +91,7 @@ import buildcraft.builders.BCBuildersStatements;
 import buildcraft.builders.registry.FillerRegistry;
 import buildcraft.builders.snapshot.Snapshot;
 import buildcraft.builders.snapshot.Template;
+import buildcraft.builders.snapshot.pattern.parameter.PatternParameterCenter;
 import buildcraft.builders.snapshot.pattern.parameter.PatternParameterFacing;
 import buildcraft.builders.snapshot.pattern.parameter.PatternParameterHollow;
 import buildcraft.lib.BCLib;
@@ -147,6 +148,30 @@ public final class BuildCraftLogicGameTests {
                     require(helper, !filled, pattern.getUniqueTag() + " unexpectedly filled " + size);
                 } else {
                     require(helper, filled, pattern.getUniqueTag() + " rejected " + size);
+                }
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(templateNamespace = BCLib.MODID, template = EMPTY_TEMPLATE, timeoutTicks = 200)
+    public static void everyShapeToleratesWrongParameterTypes(GameTestHelper helper) {
+        // Filler parameters come from the client and from saved NBT, so a slot can hold any registered parameter type.
+        FillerManager.registry = FillerRegistry.INSTANCE;
+        for (IFillerPatternShape pattern : Arrays.stream(BCBuildersStatements.PATTERNS)
+            .filter(IFillerPatternShape.class::isInstance)
+            .map(IFillerPatternShape.class::cast)
+            .collect(Collectors.toList())) {
+            for (int slot = 0; slot < pattern.maxParameters(); slot++) {
+                IStatementParameter[] parameters = defaultParameters(pattern);
+                parameters[slot] = parameters[slot] instanceof PatternParameterHollow
+                    ? PatternParameterCenter.CENTER
+                    : PatternParameterHollow.HOLLOW;
+                try {
+                    pattern.fillTemplate(createFilledTemplate(new BlockPos(5, 5, 5)), parameters);
+                } catch (ClassCastException e) {
+                    helper.fail(pattern.getUniqueTag() + " threw for a wrong parameter type in slot " + slot + ": " + e);
+                    return;
                 }
             }
         }
