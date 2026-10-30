@@ -45,17 +45,19 @@ public final class BCLog {
         return BuildCraftAPI.getVersion();
     }
     
+    /** Debug log tagged with the calling class. Capturing the caller costs a stack trace, so skip it unless debug is on. */
     public static void d(String s) {
-    	logger.debug(new Exception().getStackTrace()[1].getClassName() + " : " + s);
+        if (!logger.isDebugEnabled()) return;
+        logger.debug(new Exception().getStackTrace()[1].getClassName() + " : " + s);
     }
-    
+
     public static void d(boolean flag) {
-    	if(flag)
-    		logger.debug(new Exception().getStackTrace()[1].getClassName() + " : Catched!");
+        if (!flag || !logger.isDebugEnabled()) return;
+        logger.debug(new Exception().getStackTrace()[1].getClassName() + " : Catched!");
     }
-    
+
     public static void d(boolean flag, String msg) {
-    	if(flag)
-    		logger.debug(new Exception().getStackTrace()[1].getClassName() + " : "+msg);
+        if (!flag || !logger.isDebugEnabled()) return;
+        logger.debug(new Exception().getStackTrace()[1].getClassName() + " : " + msg);
     }
 }
