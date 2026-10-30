@@ -385,6 +385,12 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
                     break drain_attempt;
                 }
 
+                // A full tank (or one holding another fluid) says nothing about the fluid graph. Wait for it to empty
+                // instead of falling through to a full rescan of the pool every rebuildDelay.
+                if (tank.fillInternal(drain, FluidAction.SIMULATE) != drain.getAmount()) {
+                    return;
+                }
+
                 BlockPos invalid = getFirstInvalidPointOnPath(currentPos);
                 if (invalid != null) {
                     if (DEBUG_PUMP) {
