@@ -161,4 +161,10 @@ public enum FacadeSwapRecipe implements CraftingRecipe, IRecipeViewable.IViewabl
     public boolean showNotification() {
         return true;
     }
+
+    /** Not placeable in the recipe book; without this vanilla drops the recipe at load ("empty ingredients"). */
+    @Override
+    public boolean isSpecial() {
+        return true;
+    }
 }

@@ -192,4 +192,10 @@ public class FacadeAssemblyRecipes extends AssemblyRecipeBasic implements IRecip
         return true;
     }
 
+    /** Not placeable in the recipe book; without this vanilla drops the recipe at load ("empty ingredients"). */
+    @Override
+    public boolean isSpecial() {
+        return true;
+    }
+
 }
