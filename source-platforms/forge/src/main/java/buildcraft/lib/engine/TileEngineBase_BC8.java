@@ -532,6 +532,7 @@ public abstract class TileEngineBase_BC8 extends TileBC_Neptune implements IDebu
             return;
         }
 
+        beginReusingPortToPower();
         boolean pulsedPower = isPulsedPowerReceiver(currentDirection);
         if (progressPart != 0) {
             progress += getPistonSpeed();
@@ -568,6 +569,7 @@ public abstract class TileEngineBase_BC8 extends TileBC_Neptune implements IDebu
         if (!pulsedPower && isRedstonePowered && isActive()) {
             sendPower();
         }
+        endReusingPortToPower();
 
         if (!overheat) {
             burn();
@@ -840,8 +842,42 @@ public abstract class TileEngineBase_BC8 extends TileBC_Neptune implements IDebu
             .orElse(false);
     }
 
+    // update() resolves the port of currentDirection up to three times per tick (getPowerToExtract, then sendPower,
+    // which calls getPowerToExtract again). Each resolve walks the engine chain and does several capability lookups,
+    // so update() reuses the first result until it has sent power. Never across ticks: the endpoint can change.
+    private boolean reusePortToPower;
+    private boolean reusedPortResolved;
+    private Direction reusedPortSide;
+    private MjPort reusedPort;
+
+    private void beginReusingPortToPower() {
+        reusePortToPower = true;
+        reusedPortResolved = false;
+        reusedPortSide = null;
+        reusedPort = null;
+    }
+
+    private void endReusingPortToPower() {
+        reusePortToPower = false;
+        reusedPortResolved = false;
+        reusedPortSide = null;
+        reusedPort = null;
+    }
+
     /** Returns the API2 MJ endpoint reached through a valid same-engine chain. */
     public MjPort getPortToPower(Direction side) {
+        if (!reusePortToPower) {
+            return resolvePortToPower(side);
+        }
+        if (!reusedPortResolved || side != reusedPortSide) {
+            reusedPort = resolvePortToPower(side);
+            reusedPortSide = side;
+            reusedPortResolved = true;
+        }
+        return reusedPort;
+    }
+
+    private MjPort resolvePortToPower(Direction side) {
         TileEngineBase_BC8 engine = this;
         BlockEntity next = null;
 
