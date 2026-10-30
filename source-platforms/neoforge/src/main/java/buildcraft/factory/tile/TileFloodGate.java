@@ -305,15 +305,9 @@ public class TileFloodGate extends TileBC_Neptune implements IDebuggable {
                         if (FluidUtil.tryPlaceFluid(actor, level, null, currentPos, tank, fluid)) {
                             AdvancementUtil.unlockAdvancement(getOwner().getId(), ADVANCEMENT_FLOOD_SINGLE);
 //?}
-                            for (Direction side : Direction.values()) {
-//? if mc_26_x && (>=26.3) {
-                                level.neighborChanged(getBlockState(), currentPos.offset(side.getUnitVec3i()), BCFactoryBlocks.FLOOD_GATE_BLOCK.get(),
-                                    null, false);
-//? } else {
-                                level.neighborChanged(getBlockState(), currentPos.offset(side.getNormal()), BCFactoryBlocks.FLOOD_GATE_BLOCK.get(),
-                                    currentPos, false);
-//?}
-                            }
+                            // Tell the blocks around the new fluid that it changed. Calling level.neighborChanged with the
+                            // flood gate's own state ran the flood gate's neighbour handler at each neighbour position.
+                            level.updateNeighborsAt(currentPos, level.getBlockState(currentPos).getBlock());
                             delayIndex = 0;
                             tick = 0;
                         }
