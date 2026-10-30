@@ -500,5 +500,11 @@ public enum SimpleRobotRegistryProvider implements IRobotRegistryProvider {
         if (gameplayEventsRegistered) return;
         gameplayEventsRegistered = true;
         PlatformEvents.chunkUnload(INSTANCE::onChunkUnload);
+        // A client registry keeps its level strongly (setLevel), so the WeakHashMap key is never collected by itself.
+        PlatformEvents.levelUnload(event -> {
+            if (event.getLevel() instanceof Level level) {
+                INSTANCE.clientRegistries.remove(level);
+            }
+        });
     }
 }
