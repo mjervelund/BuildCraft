@@ -304,7 +304,9 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
                 WorldOperationKind.FLUID_DRAIN, OperationMode.SIMULATE
             );
         }
-        BCLog.d(flag, blockPos + " cannot drain, "+ fluid);
+        if (!flag) {
+            BCLog.d(blockPos + " cannot drain, " + fluid);
+        }
         return flag;    }
 
     private void nextPos() {
