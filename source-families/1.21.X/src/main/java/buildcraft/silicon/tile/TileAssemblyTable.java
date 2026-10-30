@@ -115,6 +115,13 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
     private static final Identifier ADVANCEMENT = Identifier.parse("buildcraftsilicon:precision_crafting");
 
     protected boolean isDirty = true;
+    /**
+     * Recipe states (enough inputs or not) depend only on the inventory and the state map, so they are re-checked
+     * when either changed, plus every {@link #STATE_RECHECK_INTERVAL} ticks for in-place stack edits that bypass the
+     * inventory callback.
+     */
+    private boolean statesDirty = true;
+    private static final long STATE_RECHECK_INTERVAL = 20;
     private long lastApiRecipeGeneration = -1;
     private long lastBlacklistGeneration = -1;
     /** Last advertised work target; progress packets are rate-limited while the recipe is unchanged. */
@@ -136,7 +143,10 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
 
     public TileAssemblyTable(BlockPos pos, BlockState state) {
         super(BCSiliconBlocks.ASSEMBLY_TABLE_TILE.get(), pos, state);
-        inv.setCallback((a,b,c,d) -> isDirty = true);
+        inv.setCallback((a,b,c,d) -> {
+            isDirty = true;
+            statesDirty = true;
+        });
     }
 
     public IdAllocator getIdAllocator() {
@@ -176,6 +186,7 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
                 entry.getKey().recipe instanceof ApiAssemblyRecipeAdapter adapter && !adapter.registered());
         }
         if (isDirty) {
+            statesDirty = true;
             int previousSize = recipesStates.size();
             for (RecipeHolder<AssemblyRecipeBasic> holder : ((net.minecraft.server.level.ServerLevel) level).recipeAccess().recipeMap().byType(BCSiliconRecipes.ASSEMBLY_TYPE.get())) {
                 Identifier recipeId = holder.id().identifier();
@@ -218,6 +229,10 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
             isDirty = false;
         }
 
+        if (!statesDirty && !changed && (level.getGameTime() + worldPosition.asLong()) % STATE_RECHECK_INTERVAL != 0) {
+            return;
+        }
+        statesDirty = false;
         boolean findActive = false;
         for (Iterator<Map.Entry<AssemblyInstruction, EnumAssemblyRecipeState>> iterator = recipesStates.entrySet().iterator(); iterator.hasNext();) {
             Map.Entry<AssemblyInstruction, EnumAssemblyRecipeState> entry = iterator.next();
@@ -280,6 +295,7 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
     }
 
     private void activateNextRecipe() {
+        statesDirty = true;
         List<Map.Entry<AssemblyInstruction, EnumAssemblyRecipeState>> available = new ArrayList<>();
         for (Map.Entry<AssemblyInstruction, EnumAssemblyRecipeState> entry : recipesStates.entrySet()) {
             if (entry.getValue() == EnumAssemblyRecipeState.SAVED_ENOUGH
@@ -368,6 +384,7 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
         HolderLookup.Provider registries = bcData.registries();
         super.readData(bcData);
         recipesStates.clear();
+        statesDirty = true;
         pendingRecipeStates.clear();
         ListTag recipesStatesTag = NbtCompat.getList(nbt, "recipes_states");
         for (int i = 0; i < recipesStatesTag.size(); i++) {
@@ -394,6 +411,7 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
                 : lookupServerRecipe(pending.recipeName(), pending.output());
             if (instruction != null) {
                 recipesStates.put(instruction, pending.state());
+                statesDirty = true;
             }
         }
         pendingRecipeStates.clear();
@@ -452,6 +470,7 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
             if (knownOutput && stateIndex >= 0 && stateIndex < EnumAssemblyRecipeState.values().length
                 && recipesStates.containsKey(recipe)) {
                 recipesStates.put(recipe, EnumAssemblyRecipeState.values()[stateIndex]);
+                statesDirty = true;
                 // Echo the authoritative state immediately instead of waiting for a later laser-table tick.
                 sendNetworkGuiUpdate(NET_GUI_DATA);
             }
