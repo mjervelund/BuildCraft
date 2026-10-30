@@ -8,6 +8,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -27,10 +28,13 @@ import buildcraft.lib.BCLib;
 import buildcraft.lib.inventory.ItemTransactorHelper;
 import buildcraft.lib.internal.inventory.IItemTransactor;
 import buildcraft.transport.BCTransportPipes;
+import buildcraft.transport.internal.EnumWirePart;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourDiamond;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourDiamondItem;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
+import buildcraft.transport.wire.WireManager;
+import buildcraft.transport.wire.WorldSavedDataWireSystems;
 
 @GameTestHolder(BCLib.MODID)
 @PrefixGameTestTemplate(false)
@@ -370,6 +374,37 @@ public final class BuildCraftPipeTransportGameTests {
         public void clamp(PipeEventItem.TryInsert event) {
             event.accepted = Math.min(event.accepted, maximum);
         }
+    }
+
+    @GameTest(templateNamespace = BCLib.MODID, template = PipeGameTestSupport.LARGE_EMPTY_TEMPLATE,
+        timeoutTicks = 60)
+    public static void signalOutputTogglePowersOnlyItsOwnWireNetwork(GameTestHelper helper) {
+        // Two unconnected red wire networks. Toggling an emitter side of one must update that network on the next
+        // tick, through the scoped re-evaluation rather than a full one, and must leave the other network alone.
+        TilePipeHolder first = PipeGameTestSupport.placePipe(helper, new BlockPos(1, 1, 1), BCTransportPipes.cobbleItem);
+        TilePipeHolder second = PipeGameTestSupport.placePipe(helper, new BlockPos(5, 1, 5), BCTransportPipes.cobbleItem);
+        WireManager firstWires = first.getWireManager();
+        WireManager secondWires = second.getWireManager();
+        require(helper, firstWires.addPart(EnumWirePart.EAST_UP_SOUTH, DyeColor.RED), "could not add wire to first pipe");
+        require(helper, secondWires.addPart(EnumWirePart.EAST_UP_SOUTH, DyeColor.RED), "could not add wire to second pipe");
+        WorldSavedDataWireSystems systems = WorldSavedDataWireSystems.get(helper.getLevel());
+
+        helper.runAfterDelay(3, () -> {
+            require(helper, !firstWires.isAnyPowered(DyeColor.RED), "first wire was powered before any emitter");
+            // Other tests in the same level may request a full re-evaluation; only check that this toggle did not.
+            boolean fullBefore = systems.gatesChanged;
+            require(helper, firstWires.setSignalOutput(Direction.UP, DyeColor.RED, true), "emitter did not switch on");
+            require(helper, systems.gatesChanged == fullBefore, "an emitter toggle requested a full wire re-evaluation");
+        });
+        helper.runAfterDelay(5, () -> {
+            require(helper, firstWires.isAnyPowered(DyeColor.RED), "wire was not powered after its emitter switched on");
+            require(helper, !secondWires.isAnyPowered(DyeColor.RED), "an unconnected wire network was powered");
+            require(helper, firstWires.setSignalOutput(Direction.UP, DyeColor.RED, false), "emitter did not switch off");
+        });
+        helper.runAfterDelay(7, () -> {
+            require(helper, !firstWires.isAnyPowered(DyeColor.RED), "wire stayed powered after its emitter switched off");
+            helper.succeed();
+        });
     }
 
     private static void require(GameTestHelper helper, boolean condition, String message) {

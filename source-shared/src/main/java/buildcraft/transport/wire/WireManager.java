@@ -271,7 +271,9 @@ public class WireManager {
         if (outputs.isEmpty()) signalOutputs.remove(side);
         if (changed && !holder.getPipeWorld().isClientSide()) {
             WorldSavedDataWireSystems systems = getWireSystems();
-            systems.gatesChanged = true;
+            // Re-evaluate only the systems fed by this side. Marking every system (gatesChanged) made each gate
+            // toggle, e.g. every pulse of a gate clock, recompute all wire networks in the dimension.
+            systems.markEmitterChanged(holder.getPipePos(), side, color);
             // Legacy wire-system save topology may omit sides that did not host emitter pluggables.
             // Rebuild once when an active source is missing from the saved topology; complete
             // systems already contain every side endpoint, so normal signal toggles are O(1).
