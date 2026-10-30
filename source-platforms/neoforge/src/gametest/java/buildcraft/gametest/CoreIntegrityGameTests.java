@@ -126,4 +126,54 @@ public final class CoreIntegrityGameTests {
             helper.fail(message);
         }
     }
+
+//? if >=26.3 {
+    @GameTest(templateNamespace = BCLib.MODID, template = EMPTY_TEMPLATE, timeoutTicks = 20)
+    public static void guideIndexSkipsUnencodableRecipeDisplays(GameTestHelper helper) {
+        // A mod can hand out a recipe display whose type it never registered (AE2 26.3.1-alpha's
+        // StorageCellUpgradeDisplay). Encoding it throws, which crashed the server tick on every player join.
+        net.minecraft.world.item.crafting.display.RecipeDisplay.Type<net.minecraft.world.item.crafting.display.RecipeDisplay> unregisteredType =
+            new net.minecraft.world.item.crafting.display.RecipeDisplay.Type<>(
+                com.mojang.serialization.MapCodec.unit(() -> null),
+                net.minecraft.network.codec.StreamCodec.of((buffer, value) -> { }, buffer -> null));
+        net.minecraft.world.item.crafting.display.RecipeDisplay unregistered = new net.minecraft.world.item.crafting.display.RecipeDisplay() {
+            @Override public net.minecraft.world.item.crafting.display.SlotDisplay result() {
+                return net.minecraft.world.item.crafting.display.SlotDisplay.Empty.INSTANCE;
+            }
+            @Override public net.minecraft.world.item.crafting.display.SlotDisplay craftingStation() {
+                return net.minecraft.world.item.crafting.display.SlotDisplay.Empty.INSTANCE;
+            }
+            @Override public net.minecraft.world.item.crafting.display.RecipeDisplay.Type<? extends net.minecraft.world.item.crafting.display.RecipeDisplay> type() {
+                return unregisteredType;
+            }
+        };
+        net.minecraft.world.item.crafting.display.RecipeDisplay vanilla = new net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay(
+            java.util.List.of(net.minecraft.world.item.crafting.display.SlotDisplay.Empty.INSTANCE),
+            net.minecraft.world.item.crafting.display.SlotDisplay.Empty.INSTANCE,
+            net.minecraft.world.item.crafting.display.SlotDisplay.Empty.INSTANCE);
+
+        net.minecraft.network.RegistryFriendlyByteBuf buffer = new net.minecraft.network.RegistryFriendlyByteBuf(
+            io.netty.buffer.Unpooled.buffer(), helper.getLevel().registryAccess());
+        try {
+            require(helper, !buildcraft.lib.net.MessageGuideRecipeDisplays.tryEncode(buffer, guideEntry("unregistered", unregistered)),
+                "a display with an unregistered type was accepted for the guide index");
+            require(helper, !buildcraft.lib.net.MessageGuideRecipeDisplays.tryEncode(buffer, guideEntry("unregistered_again", unregistered)),
+                "a second display of the same unregistered type was accepted");
+            require(helper, buildcraft.lib.net.MessageGuideRecipeDisplays.tryEncode(buffer, guideEntry("vanilla", vanilla)),
+                "a vanilla shapeless display could not be encoded");
+            require(helper, buffer.writerIndex() > 0, "the encodable display wrote nothing");
+        } finally {
+            buffer.release();
+        }
+        helper.succeed();
+    }
+
+    private static buildcraft.lib.net.GuideRecipeDisplayCache.Entry guideEntry(String name,
+            net.minecraft.world.item.crafting.display.RecipeDisplay display) {
+        net.minecraft.resources.Identifier id = net.minecraft.resources.Identifier.parse("buildcraft:gametest/" + name);
+        return new buildcraft.lib.net.GuideRecipeDisplayCache.Entry(id, new net.minecraft.world.item.crafting.display.RecipeDisplayEntry(
+            new net.minecraft.world.item.crafting.display.RecipeDisplayId(0), display, java.util.OptionalInt.empty(),
+            net.minecraft.world.item.crafting.RecipeBookCategories.CRAFTING_MISC, java.util.Optional.empty()));
+    }
+//? }
 }
