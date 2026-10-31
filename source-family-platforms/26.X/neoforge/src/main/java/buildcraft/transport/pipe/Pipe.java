@@ -143,6 +143,8 @@ public final class Pipe implements IPipe, IDebuggable, PipeExecutionContext {
     private boolean apiEnvironmentInvalidated;
     private DyeColor colour = null;
     private boolean updateMarked = true;
+    /** Whether {@link #updateConnections()} has sent the connection state to clients since this pipe was created/loaded. */
+    private boolean connectionsSynced = false;
     private final EnumMap<Direction, Float> connected = new EnumMap<>(Direction.class);
     private final EnumMap<Direction, ConnectedType> types = new EnumMap<>(Direction.class);
     private PipeModelKey lastModel;
@@ -467,7 +469,14 @@ public final class Pipe implements IPipe, IDebuggable, PipeExecutionContext {
             // Connection lengths/types are part of the baked pipe model, not just flow state.
             holder.scheduleRenderUpdate();
         }
-        getHolder().scheduleNetworkUpdate(PipeMessageReceiver.BEHAVIOUR);
+        // Only sync (and mark the tile changed) when the connections changed, or once after load. scheduleNetworkUpdate
+        // calls setChanged, which notifies the horizontal neighbours (updateNeighbourForOutputSignal -> onNeighborChange),
+        // and a pipe treats that as a possible topology change: unconditionally, adjacent pipes re-marked each other and
+        // re-ran this method plus a BEHAVIOUR packet every tick, forever.
+        if (topologyChanged || !connectionsSynced) {
+            connectionsSynced = true;
+            getHolder().scheduleNetworkUpdate(PipeMessageReceiver.BEHAVIOUR);
+        }
     }
 
     // API2 pipe runtime surface
