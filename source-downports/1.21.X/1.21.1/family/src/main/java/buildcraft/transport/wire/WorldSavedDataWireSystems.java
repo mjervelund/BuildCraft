@@ -33,6 +33,7 @@ import buildcraft.transport.internal.pipe.IPipeHolder;
 import buildcraft.lib.net.MessageManager;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -57,6 +58,8 @@ public class WorldSavedDataWireSystems extends SavedData {
     public final List<Player> changedPlayers = new ArrayList<>();
 
     private final Map<WireSystem.WireElement, List<WireSystem>> elementsToWireSystemsIndex = new HashMap<>();
+    /** Systems to re-evaluate on the next tick when nothing has asked for a full re-evaluation (gatesChanged). */
+    private final java.util.Set<WireSystem> dirtySystems = new java.util.LinkedHashSet<>();
     /** Stable unique wire ids for the current topology, including 32-bit hash collisions. */
     private final Map<WireSystem, Integer> syncIds = new HashMap<>();
 
@@ -92,6 +95,18 @@ public class WorldSavedDataWireSystems extends SavedData {
 
     public List<WireSystem> getWireSystemsWithElementAsReadOnlyList(WireSystem.WireElement element) {
         return this.elementsToWireSystemsIndex.getOrDefault(element, Collections.emptyList());
+    }
+
+    /**
+     * An emitter side changed its output for one colour. Only the systems of that colour containing the emitter can
+     * change, so re-evaluate just those on the next tick instead of every system in the dimension (gatesChanged).
+     */
+    public void markEmitterChanged(BlockPos pos, Direction side, DyeColor color) {
+        for (WireSystem wireSystem : getWireSystemsWithElementAsReadOnlyList(new WireSystem.WireElement(pos, side))) {
+            if (wireSystem.color == color) {
+                dirtySystems.add(wireSystem);
+            }
+        }
     }
 
     public void removeWireSystem(WireSystem wireSystem) {
@@ -195,6 +210,7 @@ public class WorldSavedDataWireSystems extends SavedData {
         boolean updateGates = gatesChanged;
         gatesChanged = false;
         if(updateGates) {
+            dirtySystems.clear();
             wireSystems.replaceAll((wireSystem, oldPowered) -> {
                 boolean newPowered = wireSystem.update(this);
                 if (oldPowered != newPowered) {
@@ -203,6 +219,21 @@ public class WorldSavedDataWireSystems extends SavedData {
                 publishExternalSignal(wireSystem, newPowered);
                 return newPowered;
             });
+        } else if (!dirtySystems.isEmpty()) {
+            List<WireSystem> dirty = new ArrayList<>(dirtySystems);
+            dirtySystems.clear();
+            for (WireSystem wireSystem : dirty) {
+                Boolean oldPowered = wireSystems.get(wireSystem);
+                if (oldPowered == null) {
+                    continue; // removed by a structure change since it was marked
+                }
+                boolean newPowered = wireSystem.update(this);
+                if (oldPowered != newPowered) {
+                    changedSystems.add(wireSystem);
+                }
+                publishExternalSignal(wireSystem, newPowered);
+                wireSystems.put(wireSystem, newPowered);
+            }
         }
         //to debug
         if(!world.isClientSide && (structureChanged || !changedSystems.isEmpty() || !changedPlayers.isEmpty()))
