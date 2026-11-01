@@ -6,6 +6,7 @@ package buildcraft.builders.gui;
 
 import java.util.List;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.vertex.PoseStack;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -181,8 +182,11 @@ public class GuiArchitectTable extends GuiBC8<ContainerArchitectTable> {
 
 	@Override
 	public boolean keyPressed(int a, int b, int c) {
-		if (a == 256) {
-			this.minecraft.player.closeContainer();
+		// 26.x key events carry SDL scancodes: escape is InputConstants.KEY_ESCAPE (41), not GLFW's 256. Close
+		// before the name field sees the key; the focused field would otherwise consume it and keep the screen open.
+		if (a == InputConstants.KEY_ESCAPE) {
+			this.onClose();
+			return true;
 		}
 		return !this.nameField.keyPressed(a, b, c) && !this.nameField.canConsumeInput() ? super.keyPressed(a, b, c)
 				: true;
