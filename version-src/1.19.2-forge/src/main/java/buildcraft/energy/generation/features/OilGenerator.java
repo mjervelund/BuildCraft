@@ -41,8 +41,13 @@ public class OilGenerator {
     public static final boolean DEBUG_OILGEN_BASIC = BCDebugging.shouldDebugLog("energy.oilgen");
     public static final boolean DEBUG_OILGEN_ALL = BCDebugging.shouldDebugComplex("energy.oilgen");
     
-    /** A bounded cache with the world and configuration in each key: one dimension cannot poison another. */
-    private record CacheKey(WorldGenLevel world, int cx, int cz, OilFeatureConfiguration settings) {}
+    /**
+     * A bounded cache with the dimension and configuration in each key: one dimension cannot poison another. The key
+     * holds the ServerLevel, not the WorldGenRegion passed to the feature: each chunk gets its own region, so a region
+     * key never hit across the 121 chunk lookups each placement does, and the cache held up to 8192 regions. The
+     * structures depend only on the dimension (seed, height, generator noise biome), the chunk and the configuration.
+     */
+    private record CacheKey(ServerLevel world, int cx, int cz, OilFeatureConfiguration settings) {}
 
     private static final LoadingCache<CacheKey, List<OilStructure>> structureCache
         = CacheBuilder.newBuilder().maximumSize(8192).expireAfterAccess(20, TimeUnit.SECONDS)
@@ -67,7 +72,7 @@ public class OilGenerator {
     /** Explicit per-feature configuration: worldgen threads never communicate through global config state. */
     public static List<OilStructure> getStructures(WorldGenLevel world, int cx, int cz,
             OilFeatureConfiguration settings) {
-        return structureCache.getUnchecked(new CacheKey(world, cx, cz, settings));
+        return structureCache.getUnchecked(new CacheKey(world.getLevel(), cx, cz, settings));
     }
 
     /** Legacy callers only; the placed feature always supplies its own immutable settings. */
