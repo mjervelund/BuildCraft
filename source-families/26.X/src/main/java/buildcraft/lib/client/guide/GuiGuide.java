@@ -24,6 +24,7 @@ import javax.annotation.Nullable;
 
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 //? if neoforge && (>=26.3) {
@@ -31,7 +32,6 @@ import buildcraft.lib.compat.minecraft.text.BCTextFormat;
 //? } else {
 import net.minecraft.ChatFormatting;
 //?}
-import net.minecraft.util.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -1166,7 +1166,9 @@ public final class GuiGuide extends Screen {
         if (target == null || target.isEmpty()) return;
         if (target.startsWith("http://") || target.startsWith("https://")) {
             try {
-                Util.getPlatform().openUri(new URI(target));
+                // Guide pages come from resources, which a server resource pack can replace: ask before opening,
+                // as vanilla does for chat links.
+                ConfirmLinkScreen.confirmLinkNow(this, new URI(target));
             } catch (Exception ignored) {
             }
             return;
