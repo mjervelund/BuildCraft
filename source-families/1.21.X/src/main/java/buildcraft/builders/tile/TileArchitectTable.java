@@ -60,6 +60,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.Entity;
@@ -73,6 +74,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import buildcraft.lib.net.BCNetworkSide;
 import buildcraft.lib.net.BCPacketContext;
 
@@ -107,6 +109,12 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
     private BoxIterator boxIterator;
     private boolean isValid = false;
     private boolean scanning = false;
+    /**
+     * Set when a finished scan could not be saved. No new scan starts until a player changes the blueprint slots,
+     * so a failing disk is reported once instead of being rescanned and retried every tick. Not saved: a restart
+     * also retries once.
+     */
+    private boolean saveFailed = false;
     public String name = "<unnamed>";
     public final DeltaInt deltaProgress = deltaManager.addDelta(
         "progress",
@@ -233,7 +241,8 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
             return;
         }
 
-        if (!invSnapshotIn.getStackInSlot(0).isEmpty() && invSnapshotOut.getStackInSlot(0).isEmpty() && isValid) {
+        if (!invSnapshotIn.getStackInSlot(0).isEmpty() && invSnapshotOut.getStackInSlot(0).isEmpty() && isValid
+            && !saveFailed) {
             if (!scanning) {
                 snapshotType = ItemSnapshot.EnumItemSnapshotType.getFromStack(
                     invSnapshotIn.getStackInSlot(0)
@@ -373,7 +382,19 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
             // Disk failures leave the scan and all input items intact for a later retry.
             SnapshotCreationPersistence.persist(level, snapshot, header);
         } catch (IllegalStateException failure) {
-            BCLog.logger.warn("Cannot save Architect Table blueprint at " + worldPosition, failure);
+            saveFailed = true;
+            BCLog.logger.warn("Cannot save Architect Table blueprint at " + worldPosition
+                + "; not retrying until the blueprint slots change", failure);
+            ServerPlayer ownerPlayer = level.getServer() == null ? null
+                : level.getServer().getPlayerList().getPlayer(ownerProfile.getId());
+            if (ownerPlayer != null) {
+                ownerPlayer.sendSystemMessage(Component.translatableWithFallback(
+                    "chat.buildcraft.architect.save_failed",
+                    "The Architect Table at %s %s %s could not save the blueprint (see the server log). "
+                        + "Take the blueprint out and put it back to try again.",
+                    worldPosition.getX(), worldPosition.getY(), worldPosition.getZ()
+                ));
+            }
             return;
         }
         ItemStack stackIn = invSnapshotIn.getStackInSlot(0).copy();
@@ -386,6 +407,15 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
         boxIterator = null;
         sendNetworkUpdate(NET_RENDER_DATA);
         AdvancementUtil.unlockAdvancement(getOwner().getId(), ADVANCEMENT);
+    }
+
+    @Override
+    protected void onSlotChange(IItemHandlerModifiable handler, int slot, @Nonnull ItemStack before,
+        @Nonnull ItemStack after) {
+        super.onSlotChange(handler, slot, before, after);
+        if (handler == invSnapshotIn || handler == invSnapshotOut) {
+            saveFailed = false;
+        }
     }
 
     @Override
