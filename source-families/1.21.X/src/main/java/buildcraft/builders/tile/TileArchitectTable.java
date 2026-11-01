@@ -246,7 +246,9 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
                 int size = (int) Math.max(1.0D, Math.min(Integer.MAX_VALUE - 10.0D, estimatedTicks));
                 deltaProgress.addDelta(0, size, 1);
                 deltaProgress.addDelta(size, size + 10, -1);
-                blueprintScannedPalette.clear();
+                // Every scan starts from scratch. A scan whose save failed keeps its arrays but has no
+                // iterator, and its entities would otherwise be added a second time.
+                resetScanState();
                 scanning = true;
             }
         } else {
@@ -282,8 +284,11 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
 
     private BlockPos scanSingleBlock() {
         BlockPos size = box.size();
-        if (templateScannedBlocks == null || blueprintScannedData == null) {
+        if (boxIterator == null || templateScannedBlocks == null || blueprintScannedData == null) {
+            // The scanned arrays are not saved, so a scan resumed after a reload restarts here as well.
             boxIterator = new BoxIterator(box, EnumAxisOrder.XZY.getMinToMaxOrder(), true);
+            blueprintScannedPalette.clear();
+            blueprintScannedEntities.clear();
             templateScannedBlocks = new BitSet(Snapshot.getDataSize(size));
             blueprintScannedData = new int[Snapshot.getDataSize(size)];
         }
@@ -312,6 +317,14 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
             boxIterator = null;
         }
         return levelScanPos;
+    }
+
+    private void resetScanState() {
+        templateScannedBlocks = null;
+        blueprintScannedData = null;
+        blueprintScannedPalette.clear();
+        blueprintScannedEntities.clear();
+        boxIterator = null;
     }
 
     private ISchematicBlock readSchematicBlock(BlockPos levelScanPos) {
@@ -380,10 +393,7 @@ public class TileArchitectTable extends TileBC_Neptune implements IDebuggable, M
         stackIn.shrink(1);
         invSnapshotIn.setStackInSlot(0, stackIn.isEmpty() ? ItemStack.EMPTY : stackIn);
         invSnapshotOut.setStackInSlot(0, ItemSnapshot.getUsed(snapshotType, header));
-        templateScannedBlocks = null;
-        blueprintScannedData = null;
-        blueprintScannedEntities.clear();
-        boxIterator = null;
+        resetScanState();
         sendNetworkUpdate(NET_RENDER_DATA);
         AdvancementUtil.unlockAdvancement(getOwner().getId(), ADVANCEMENT);
     }
