@@ -113,7 +113,7 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
     private final SafeTimeTracker rebuildDelay = new SafeTimeTracker(30);
     private static final int QUEUE_SCAN_BUDGET = 512;
     private final Deque<BlockPos> scanFrontier = new ArrayDeque<>();
-    private final Set<BlockPos> scanChecked = new HashSet<>();
+    private Set<BlockPos> scanChecked = new HashSet<>();
     private Fluid scanFluid = Fluids.EMPTY;
     private Direction[] scanDirections = SEARCH_NORMAL;
     private boolean scanForInfiniteWater;
@@ -274,6 +274,10 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
         }
         scanInProgress = false;
         queueBuilt = true;
+        // Only paths is needed once the queue is built. A new set rather than clear(): clear() keeps the table that
+        // a lake or oil sea grew, so the pump would hold it for as long as it stays loaded.
+        scanFrontier.clear();
+        scanChecked = new HashSet<>();
         nextPos();
     }
 
@@ -320,6 +324,16 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
         
         currentPos = null;
         updateLength();
+    }
+
+    /**
+     * The current target can no longer be drained: something else took it, its path was cut, or it stopped being a
+     * source. Move on to the next queued source instead of rescanning the whole pool, which in a large lake or oil sea
+     * kept the pump scanning instead of pumping. When the queue runs out, mine() rebuilds it as before.
+     */
+    private void skipCurrentPos() {
+        paths.remove(currentPos);
+        nextPos();
     }
 
     @Override
@@ -387,7 +401,8 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
                                 + " but couldn't because no fluid was drained!"
                         );
                     }
-                    break drain_attempt;
+                    skipCurrentPos();
+                    return;
                 }
 
                 BlockPos invalid = getFirstInvalidPointOnPath(currentPos);
@@ -398,7 +413,8 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
                                 + " but couldn't because the path stopped at " + invalid + "!"
                         );
                     }
-                    break drain_attempt;
+                    skipCurrentPos();
+                    return;
                 } else if (!canDrain(currentPos)) {
                     if (DEBUG_PUMP) {
                         BCLog.logger.info(
@@ -406,7 +422,8 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
                                 + " but couldn't because it couldn't be drained!"
                         );
                     }
-                    break drain_attempt;
+                    skipCurrentPos();
+                    return;
                 }
                 int canAccept = tank.fillInternal(drain, FluidAction.SIMULATE);
                 if (canAccept != drain.getAmount()) {
@@ -438,7 +455,8 @@ public class TilePump extends TileMiner implements MachineRuntimeView {
                                     + " but the executed drain returned " + actualDrain
                             );
                         }
-                        break drain_attempt;
+                        skipCurrentPos();
+                        return;
                     }
                 }
 
