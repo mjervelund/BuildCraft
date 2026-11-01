@@ -85,6 +85,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.model.data.ModelData;
 import net.neoforged.neoforge.capabilities.BlockCapability;
+import net.neoforged.neoforge.capabilities.BlockCapabilityCache;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.minecraft.server.level.ServerLevel;
+import java.util.IdentityHashMap;
 import buildcraft.lib.net.BCNetworkSide;
 import buildcraft.lib.net.BCPacketContext;
 import buildcraft.lib.compat.GameProfileCompat;
@@ -136,6 +140,10 @@ public class TilePipeHolder extends TileBC_Neptune implements IPipeHolder, IDebu
     public final WireManager wireManager = new WireManager(this);
     public final PipeEventBus eventBus = new PipeEventBus();
     private final Map<Direction, PluggableHolder> pluggables = new EnumMap<>(Direction.class);
+    /** Per face: capability caches for the neighbour, invalidated by NeoForge when it changes (server only). */
+    @SuppressWarnings("unchecked")
+    private final Map<BlockCapability<?, Direction>, BlockCapabilityCache<?, Direction>>[] neighbourCapabilityCaches =
+        new Map[6];
     private Pipe pipe = Pipe.EMPTY;
     private boolean scheduleRenderUpdate = true;
     /** Send one complete pipe creation payload after placement, before incremental behaviour/flow updates. */
@@ -683,7 +691,6 @@ public class TilePipeHolder extends TileBC_Neptune implements IPipeHolder, IDebu
             }
             Direction targetSide = side.getOpposite();
             BlockPos neighbourPos = worldPosition.relative(side);
-            BlockEntity neighbour = level.getBlockEntity(neighbourPos);
 
             // NeoForge standard transfer capabilities are position based and may exist without a
             // BlockEntity. Adapt them before falling back to BuildCraft/legacy capability lookups.
@@ -693,14 +700,7 @@ public class TilePipeHolder extends TileBC_Neptune implements IPipeHolder, IDebu
                 return value;
             }
             if (capability == CapUtil.CAP_FLUIDS) {
-                if (neighbour != null) {
-                    T transformed = CompatCapTransfromer.INSTANCE
-                        .getCap(neighbour, capability, targetSide)
-                        .orElse(null);
-                    if (transformed != null) {
-                        return transformed;
-                    }
-                }
+                // CompatCapTransfromer.getCap(.., CAP_FLUIDS, ..) is this same CapUtil lookup; no need to run it twice.
                 @SuppressWarnings("unchecked")
                 T value = (T) CapUtil.getFluidHandler(level, neighbourPos, targetSide);
                 return value;
@@ -711,17 +711,43 @@ public class TilePipeHolder extends TileBC_Neptune implements IPipeHolder, IDebu
                 return value;
             }
 
-            if (neighbour != null) {
-                T transformed = CompatCapTransfromer.INSTANCE
-                    .getCap(neighbour, capability, targetSide)
-                    .orElse(null);
-                if (transformed != null) {
-                    return transformed;
+            // For any other capability the transformer is the same level lookup as below. For Fluid.BLOCK it differs
+            // only when a compat adapter is registered, and adapter results can't be cached.
+            if (capability == Capabilities.Fluid.BLOCK && CompatCapTransfromer.INSTANCE.hasFluidAdapters()) {
+                BlockEntity neighbour = level.getBlockEntity(neighbourPos);
+                if (neighbour != null) {
+                    T transformed = CompatCapTransfromer.INSTANCE
+                        .getCap(neighbour, capability, targetSide)
+                        .orElse(null);
+                    if (transformed != null) {
+                        return transformed;
+                    }
                 }
             }
-            return level.getCapability(capability, neighbourPos, targetSide);
+            return getNeighbourCapability(side, capability);
         }
         return null;
+    }
+
+    /** {@code level.getCapability} on the neighbour at {@code side}, through a {@link BlockCapabilityCache} on servers. */
+    @Nullable
+    private <T> T getNeighbourCapability(Direction side, BlockCapability<T, Direction> capability) {
+        BlockPos neighbourPos = worldPosition.relative(side);
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return level.getCapability(capability, neighbourPos, side.getOpposite());
+        }
+        Map<BlockCapability<?, Direction>, BlockCapabilityCache<?, Direction>> caches =
+            neighbourCapabilityCaches[side.ordinal()];
+        if (caches == null) {
+            caches = neighbourCapabilityCaches[side.ordinal()] = new IdentityHashMap<>(4);
+        }
+        @SuppressWarnings("unchecked")
+        BlockCapabilityCache<T, Direction> cache = (BlockCapabilityCache<T, Direction>) caches.get(capability);
+        if (cache == null || cache.level() != serverLevel) {
+            cache = BlockCapabilityCache.create(capability, serverLevel, neighbourPos, side.getOpposite());
+            caches.put(capability, cache);
+        }
+        return cache.getCapability();
     }
 
     public void scheduleRenderUpdate() {

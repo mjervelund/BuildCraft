@@ -92,6 +92,11 @@ public enum CompatCapTransfromer {
         }
     }
 
+    /** @return true if any fluid adapter is registered; otherwise fluid lookups are the plain level lookup. */
+    public boolean hasFluidAdapters() {
+        return !fluidCapRegistry.isEmpty() || !fluidCapFallbacks.isEmpty();
+    }
+
     public <E> Optional<E> getCap(
         BlockEntity provider,
         BlockCapability<E, Direction> capability,
