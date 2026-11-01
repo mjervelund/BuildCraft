@@ -115,6 +115,8 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
     private static final Identifier ADVANCEMENT = Identifier.parse("buildcraftsilicon:precision_crafting");
 
     protected boolean isDirty = true;
+    /** Set once the owner was online and got the advancement, so the per-tick lookups stop. */
+    private boolean advancementAwarded = false;
     private long lastApiRecipeGeneration = -1;
     private long lastBlacklistGeneration = -1;
     /** Last advertised work target; progress packets are rate-limited while the recipe is unchanged. */
@@ -326,7 +328,9 @@ public class TileAssemblyTable extends TileLaserTableBase implements MenuProvide
         long target = getTarget();
         boolean completed = false;
         if (target > 0) {
-            AdvancementUtil.unlockAdvancement(GameProfileCompat.id(getOwner()), ADVANCEMENT);
+            if (!advancementAwarded) {
+                advancementAwarded = AdvancementUtil.unlockAdvancement(GameProfileCompat.id(getOwner()), ADVANCEMENT);
+            }
             if (power >= target) {
                 AssemblyInstruction instruction = getActiveRecipe();
                 if (instruction != null && canConsume(instruction, false)) {
