@@ -320,7 +320,14 @@ public final class GlobalSavedDataSnapshots {
             if (originalKey.header != null && !sameContentKey(originalKey.header.key, copy.key)) {
                 return null;
             }
-            copy.key = new Snapshot.Key(copy.key, originalKey.header);
+            // copy() recomputes the key from the content without a header, so originalKey never has one. Take the
+            // name, owner and settings from the snapshot that was passed in, as long as they describe this content.
+            Snapshot.Header header = snapshot.key.header;
+            if (header != null && !sameContentKey(header.key, copy.key)) {
+                BCLog.logger.debug("Dropped a blueprint header that does not match its content: " + header.name);
+                header = null;
+            }
+            copy.key = new Snapshot.Key(copy.key, header);
             return copy;
         } catch (RuntimeException e) {
             BCLog.logger.warn("Failed to validate BuildCraft snapshot", e);
