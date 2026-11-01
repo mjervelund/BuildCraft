@@ -7,6 +7,8 @@ package buildcraft.lib.net;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
@@ -33,6 +35,8 @@ public final class MessageGuideRecipeDisplays {
     private static final int MAX_ENTRIES = 32768;
     private static final int MAX_PACKET_BYTES = 128 * 1024;
     private static final int MAX_ENTRIES_PER_PACKET = 128;
+    /** Display classes already reported as unsendable, so each one is logged once rather than per player join. */
+    private static final Set<String> REPORTED_UNSENDABLE = ConcurrentHashMap.newKeySet();
     private final int partIndex;
     private final int partCount;
 
@@ -103,6 +107,12 @@ public final class MessageGuideRecipeDisplays {
             manager.listDisplaysForRecipe(recipe.id(), display ->
                 displays.add(new GuideRecipeDisplayCache.Entry(recipeId, display)));
         }
+        RegistryFriendlyByteBuf probe = new RegistryFriendlyByteBuf(Unpooled.buffer(), player.registryAccess());
+        try {
+            displays.removeIf(entry -> !tryEncode(probe, entry));
+        } finally {
+            probe.release();
+        }
         // Legacy single-packet API remains valid only for a small index.
         // Call sendAll() for a full index, never silently omit remaining recipes.
         if (displays.size() > MAX_ENTRIES_PER_PACKET) {
@@ -129,11 +139,13 @@ public final class MessageGuideRecipeDisplays {
         RegistryFriendlyByteBuf measuring = new RegistryFriendlyByteBuf(Unpooled.buffer(), player.registryAccess());
         try {
             for (GuideRecipeDisplayCache.Entry entry : displays) {
-                measuring.clear();
-                measuring.writeIdentifier(entry.recipeId());
-                RecipeDisplayEntry.STREAM_CODEC.encode(measuring, entry.display());
+                // One mod's display must never break the join: skip anything that cannot be encoded or sent.
+                if (!tryEncode(measuring, entry)) continue;
                 int estimated = measuring.writerIndex();
-                if (estimated > MAX_PACKET_BYTES) throw new IllegalArgumentException("Oversized recipe display");
+                if (estimated > MAX_PACKET_BYTES) {
+                    reportUnsendable(entry, "encodes to " + estimated + " bytes, over the " + MAX_PACKET_BYTES + " byte packet budget", null);
+                    continue;
+                }
                 if (!current.isEmpty() && (current.size() >= MAX_ENTRIES_PER_PACKET
                     || bytes + estimated > MAX_PACKET_BYTES)) {
                     batches.add(List.copyOf(current));
@@ -149,6 +161,32 @@ public final class MessageGuideRecipeDisplays {
         if (!current.isEmpty() || batches.isEmpty()) batches.add(List.copyOf(current));
         for (int i = 0; i < batches.size(); i++) {
             MessageManager.sendTo(new MessageGuideRecipeDisplays(batches.get(i), i, batches.size()), player);
+        }
+    }
+
+    /**
+     * Encodes one entry into {@code buffer} (cleared first) and returns true, or returns false if it cannot be encoded.
+     * For example a mod may use a recipe display type that it never registered in the recipe_display registry, which
+     * makes the registry codec throw. Such displays are left out of the Guide Book index instead of killing the tick.
+     */
+    public static boolean tryEncode(RegistryFriendlyByteBuf buffer, GuideRecipeDisplayCache.Entry entry) {
+        buffer.clear();
+        try {
+            buffer.writeIdentifier(entry.recipeId());
+            RecipeDisplayEntry.STREAM_CODEC.encode(buffer, entry.display());
+            return true;
+        } catch (RuntimeException ex) {
+            reportUnsendable(entry, "cannot be encoded", ex);
+            return false;
+        }
+    }
+
+    private static void reportUnsendable(GuideRecipeDisplayCache.Entry entry, String reason, RuntimeException ex) {
+        String displayClass = entry.display().display().getClass().getName();
+        if (REPORTED_UNSENDABLE.add(displayClass)) {
+            buildcraft.lib.internal.debug.BCLog.logger.warn(
+                "Guide Book: leaving out recipe displays of {} (first seen on recipe {}): {}{}. Further ones are skipped silently.",
+                displayClass, entry.recipeId(), reason, ex == null ? "" : ": " + ex);
         }
     }
 
