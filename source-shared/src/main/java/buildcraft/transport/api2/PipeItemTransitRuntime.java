@@ -30,10 +30,15 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 public final class PipeItemTransitRuntime {
     private PipeItemTransitRuntime() { }
 
+    /**
+     * Does not copy {@code stack}: the pipe passes in the stack it owns, and {@link #fire} returns either that same
+     * stack (no transit listener) or the context's private copy, which nothing else holds once the context closes.
+     * Copying here cost one {@link ItemStack#copy()} per item per phase (~7 per item per pipe) with no listener.
+     */
     public record Result(ItemStack stack, ItemTransitData transit, UUID id,
                          Direction redirected, int delay, Direction eject, ItemTransitPayload payload) {
         public Result {
-            stack = stack.copy();
+            Objects.requireNonNull(stack, "stack");
             Objects.requireNonNull(payload, "payload");
         }
         public Result(ItemStack stack, ItemTransitData transit, UUID id,
