@@ -41,9 +41,20 @@ public class FullStatement<S extends IStatement> implements IReference<S> {
         } else {
             for (int p = 0; p < params.length; p++) {
                 CompoundTag pNbt = nbt.getCompound(Integer.toString(p));
-                params[p] = StatementTypeParam.INSTANCE.readFromNbt(pNbt);
+                params[p] = checkParam(StatementTypeParam.INSTANCE.readFromNbt(pNbt), p);
             }
         }
+    }
+
+    /** Parameters come from saved NBT and from client packets, so they can be any registered parameter type, and
+     * statements cast them. Replace one the statement wouldn't create for this slot with the slot's default, as
+     * {@link #set} does. A slot without a default gives no type to check against and is kept as read. */
+    private IStatementParameter checkParam(IStatementParameter param, int index) {
+        if (param == null || statement == null || index >= statement.maxParameters()
+            || statement.createParameter(index) == null) {
+            return param;
+        }
+        return statement.createParameter(param, index);
     }
 
     public CompoundTag writeToNbt() {
@@ -66,7 +77,7 @@ public class FullStatement<S extends IStatement> implements IReference<S> {
         if (buffer.readBoolean()) {
             statement = type.readFromBuffer(buffer);
             for (int p = 0; p < params.length; p++) {
-                params[p] = StatementTypeParam.INSTANCE.readFromBuffer(buffer);
+                params[p] = checkParam(StatementTypeParam.INSTANCE.readFromBuffer(buffer), p);
             }
         } else {
             statement = type.defaultStatement;
