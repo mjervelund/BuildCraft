@@ -936,7 +936,11 @@ public class TileQuarry extends TileBC_Neptune implements IDebuggable, IChunkLoa
                 if (currentTask.addPower(added, withdrawn)) {
                     currentTask = null;
                 } else {
-                    sendUpdate = true;
+                    // Render data (drill position, task progress) only changes when the task progressed. An unpowered
+                    // or speed-limited quarry would otherwise send an identical packet to every watcher each tick.
+                    if (added > 0) {
+                        sendUpdate = true;
+                    }
                     break;
                 }
             }
