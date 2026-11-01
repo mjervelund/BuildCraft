@@ -19,7 +19,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.List;
 import java.util.Optional;
-import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
@@ -158,7 +157,10 @@ public class TileQuarry extends TileBC_Neptune implements IDebuggable, IChunkLoa
 
     private List<AABB> collisionBoxes = ImmutableList.of();
     private Vec3 collisionDrillPos;
-    private Vec3 lastCollisionBlocksDrillPos;
+    private static final long COLLISION_BLOCKS_CHECK_INTERVAL = 20;
+    @Nullable
+    private BlockPos lastCollisionBlocksDrillBlock;
+    private long nextCollisionBlocksCheckTick;
     private final Set<BlockPos> collisionBlockPoses = new HashSet<>();
 
 	private final BlockPositionSource blockPosSource = new BlockPositionSource(this.worldPosition);
@@ -675,7 +677,7 @@ public class TileQuarry extends TileBC_Neptune implements IDebuggable, IChunkLoa
         frameEdgeScanIndex = 0;
         miningColumnScanIndex = 0;
         nextFrameWatchdogTick = 0;
-        lastCollisionBlocksDrillPos = null;
+        lastCollisionBlocksDrillBlock = null;
         deniedBreakUntil.clear();
         BlockState state = level.getBlockState(worldPosition);
         if (state.getBlock() == BCBuildersBlocks.QUARRY.get() && frameBox.isInitialized()) {
@@ -715,10 +717,32 @@ public class TileQuarry extends TileBC_Neptune implements IDebuggable, IChunkLoa
     }
 
     private void updateCollisionBlocksIfNeeded() {
-        // The quarry itself performs one O(N) reconciliation per tick. Collision BlockEntities must
-        // never rebuild this map themselves, otherwise N children each doing O(N) work becomes O(N^2).
+        // The quarry itself performs the O(N) reconciliation. Collision BlockEntities must never rebuild this
+        // map themselves, otherwise N children each doing O(N) work becomes O(N^2). The wanted blocks only
+        // depend on the drill's block position, so rebuild as soon as that changes and otherwise re-verify
+        // once a second, which still repairs collision blocks that were removed or obstructed externally.
+        long now = level.getGameTime();
+        if (isCollisionDrillBlockCurrent() && now < nextCollisionBlocksCheckTick) {
+            return;
+        }
+        reconcileCollisionBlocks();
+        nextCollisionBlocksCheckTick = now + COLLISION_BLOCKS_CHECK_INTERVAL;
+    }
+
+    private boolean isCollisionDrillBlockCurrent() {
+        BlockPos last = lastCollisionBlocksDrillBlock;
+        if (last == null || drillPos == null) {
+            return last == null && drillPos == null;
+        }
+        return last.getX() == floorToBlock(drillPos.x)
+            && last.getY() == floorToBlock(drillPos.y)
+            && last.getZ() == floorToBlock(drillPos.z);
+    }
+
+    private void reconcileCollisionBlocks() {
         updateQuarryCollisionBlocks();
-        lastCollisionBlocksDrillPos = drillPos;
+        lastCollisionBlocksDrillBlock = drillPos == null ? null
+            : new BlockPos(floorToBlock(drillPos.x), floorToBlock(drillPos.y), floorToBlock(drillPos.z));
     }
 
     /**
@@ -727,9 +751,8 @@ public class TileQuarry extends TileBC_Neptune implements IDebuggable, IChunkLoa
      * turns a large quarry into O(N^2) work.
      */
     private void ensureCollisionBlocksCurrent() {
-        if (!Objects.equals(lastCollisionBlocksDrillPos, drillPos)) {
-            updateQuarryCollisionBlocks();
-            lastCollisionBlocksDrillPos = drillPos;
+        if (!isCollisionDrillBlockCurrent()) {
+            reconcileCollisionBlocks();
         }
     }
 
@@ -1189,7 +1212,7 @@ public class TileQuarry extends TileBC_Neptune implements IDebuggable, IChunkLoa
             removeCollisionBlock(pos);
         }
         collisionBlockPoses.clear();
-        lastCollisionBlocksDrillPos = null;
+        lastCollisionBlocksDrillBlock = null;
     }
 
     private void removeCollisionBlock(BlockPos pos) {
