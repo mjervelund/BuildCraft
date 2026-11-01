@@ -49,6 +49,11 @@ public class AIRobotSearchBlock extends AIRobot {
      * separately. A target that runs out of path budget is kept as pending and finished before scanning new blocks.
      */
     private static final int MAX_PATH_SEARCHES_PER_TICK = 1;
+    /**
+     * A* nodes expanded per robot tick (each reads up to 6 block states). A search that runs out is resumed on the
+     * next tick, so an unreachable target costs at most this much per tick instead of MAX_ASTAR_VISITED at once.
+     */
+    private static final int MAX_ASTAR_NODES_PER_TICK = 4096;
 
     public BlockIndex blockFound;
     public LinkedList<BlockIndex> path;
@@ -118,7 +123,8 @@ public class AIRobotSearchBlock extends AIRobot {
     }
 
     private SearchResult continueSearch() {
-        SearchBudget budget = new SearchBudget(MAX_BLOCK_CANDIDATES_PER_TICK, MAX_PATH_SEARCHES_PER_TICK);
+        SearchBudget budget =
+            new SearchBudget(MAX_BLOCK_CANDIDATES_PER_TICK, MAX_PATH_SEARCHES_PER_TICK, MAX_ASTAR_NODES_PER_TICK);
 
         if (pendingEvaluation != null) {
             SearchResult result = continuePendingEvaluation(budget);
@@ -175,14 +181,29 @@ public class AIRobotSearchBlock extends AIRobot {
         }
 
         Level level = robot.level();
-        while (pendingEvaluation.hasMoreAdjacents()) {
-            if (!budget.canSearchPath()) {
-                return null;
-            }
+        while (pendingEvaluation.activeSearch != null || pendingEvaluation.hasMoreAdjacents()) {
+            LinkedList<BlockIndex> candidatePath = null;
+            if (pendingEvaluation.activeSearch == null) {
+                if (!budget.canSearchPath()) {
+                    return null;
+                }
 
-            budget.consumePathSearch();
-            BlockPos adjacent = pendingEvaluation.nextAdjacent();
-            LinkedList<BlockIndex> candidatePath = pathToAdjacent(level, adjacent);
+                budget.consumePathSearch();
+                BlockPos adjacent = pendingEvaluation.nextAdjacent();
+                candidatePath = quickPathToAdjacent(level, adjacent);
+                if (candidatePath == null) {
+                    pendingEvaluation.activeSearch = new AStarSearch(start, adjacent, searchRange);
+                }
+            }
+            if (pendingEvaluation.activeSearch != null) {
+                AStarSearch search = pendingEvaluation.activeSearch;
+                if (!search.step(level, budget)) {
+                    // Out of nodes for this tick; resume this search next tick.
+                    return null;
+                }
+                pendingEvaluation.activeSearch = null;
+                candidatePath = search.result;
+            }
             if (candidatePath != null) {
                 pendingEvaluation.acceptPath(candidatePath);
                 if (candidatePath.isEmpty()) {
@@ -213,60 +234,75 @@ public class AIRobotSearchBlock extends AIRobot {
         return result;
     }
 
-    private LinkedList<BlockIndex> pathToAdjacent(Level level, BlockPos target) {
+    /** @return the path when no A* search is needed (already there, or a straight axis path), otherwise null. */
+    private LinkedList<BlockIndex> quickPathToAdjacent(Level level, BlockPos target) {
         if (start.equals(target)) {
             return new LinkedList<>();
         }
-
-        LinkedList<BlockIndex> direct = directFallback(start, target, level);
-        if (direct != null) {
-            return direct;
-        }
-        return findAStarPath(start, target, level);
+        return directFallback(start, target, level);
     }
 
-    private LinkedList<BlockIndex> findAStarPath(BlockPos start, BlockPos target, Level level) {
-        int hardLimit = Math.max(searchRange + 16, (int) Math.ceil(Math.sqrt(distanceSqr(start, target))) + 8);
-        int hardLimitSqr = hardLimit * hardLimit;
-        PriorityQueue<PathNode> open = new PriorityQueue<>((a, b) -> {
+    /** A* search that can be paused when the tick's node budget runs out and resumed on a later tick. */
+    private static final class AStarSearch {
+        private final BlockPos start;
+        private final BlockPos target;
+        private final int hardLimitSqr;
+        private final PriorityQueue<PathNode> open = new PriorityQueue<>((a, b) -> {
             int score = Double.compare(a.score(), b.score());
             return score != 0 ? score : Long.compare(a.sequence(), b.sequence());
         });
-        Map<BlockPos, BlockPos> parent = new HashMap<>();
-        Map<BlockPos, Integer> bestCost = new HashMap<>();
-        Set<BlockPos> closed = new HashSet<>();
-        long sequence = 0;
+        private final Map<BlockPos, BlockPos> parent = new HashMap<>();
+        private final Map<BlockPos, Integer> bestCost = new HashMap<>();
+        private final Set<BlockPos> closed = new HashSet<>();
+        private long sequence = 0;
+        /** The path once found; null if the target is unreachable (valid after step() returned true). */
+        private LinkedList<BlockIndex> result;
 
-        bestCost.put(start, 0);
-        open.add(new PathNode(start, heuristic(start, target), sequence++));
+        private AStarSearch(BlockPos start, BlockPos target, int searchRange) {
+            this.start = start;
+            this.target = target;
+            int hardLimit = Math.max(searchRange + 16, (int) Math.ceil(Math.sqrt(distanceSqr(start, target))) + 8);
+            this.hardLimitSqr = hardLimit * hardLimit;
+            bestCost.put(start, 0);
+            open.add(new PathNode(start, heuristic(start, target), sequence++));
+        }
 
-        while (!open.isEmpty() && closed.size() < MAX_ASTAR_VISITED) {
-            PathNode node = open.poll();
-            BlockPos current = node.pos();
-            if (!closed.add(current)) {
-                continue;
-            }
-            if (current.equals(target)) {
-                return reconstruct(start, target, parent);
-            }
+        /** @return true when the search finished (see {@link #result}), false when the node budget ran out. */
+        private boolean step(Level level, SearchBudget budget) {
+            while (!open.isEmpty() && closed.size() < MAX_ASTAR_VISITED) {
+                if (!budget.canExpandNode()) {
+                    return false;
+                }
+                PathNode node = open.poll();
+                BlockPos current = node.pos();
+                if (!closed.add(current)) {
+                    continue;
+                }
+                budget.consumeNode();
+                if (current.equals(target)) {
+                    result = reconstruct(start, target, parent);
+                    return true;
+                }
 
-            int currentCost = bestCost.getOrDefault(current, Integer.MAX_VALUE);
-            for (Direction direction : Direction.values()) {
-                BlockPos next = current.relative(direction);
-                if (closed.contains(next)) continue;
-                if (distanceSqr(next, start) > hardLimitSqr) continue;
-                // Do not clamp the path itself to the work zone. Only the searched target block is zone-limited.
-                if (!isSoft(level, next)) continue;
+                int currentCost = bestCost.getOrDefault(current, Integer.MAX_VALUE);
+                for (Direction direction : Direction.values()) {
+                    BlockPos next = current.relative(direction);
+                    if (closed.contains(next)) continue;
+                    if (distanceSqr(next, start) > hardLimitSqr) continue;
+                    // Do not clamp the path itself to the work zone. Only the searched target block is zone-limited.
+                    if (!isSoft(level, next)) continue;
 
-                int newCost = currentCost + 1;
-                if (newCost < bestCost.getOrDefault(next, Integer.MAX_VALUE)) {
-                    bestCost.put(next, newCost);
-                    parent.put(next, current);
-                    open.add(new PathNode(next, newCost + heuristic(next, target), sequence++));
+                    int newCost = currentCost + 1;
+                    if (newCost < bestCost.getOrDefault(next, Integer.MAX_VALUE)) {
+                        bestCost.put(next, newCost);
+                        parent.put(next, current);
+                        open.add(new PathNode(next, newCost + heuristic(next, target), sequence++));
+                    }
                 }
             }
+            result = null;
+            return true;
         }
-        return null;
     }
 
     private static LinkedList<BlockIndex> directFallback(BlockPos start, BlockPos target, Level level) {
@@ -387,10 +423,20 @@ public class AIRobotSearchBlock extends AIRobot {
     private static final class SearchBudget {
         private int remainingBlockScans;
         private int remainingPathSearches;
+        private int remainingAStarNodes;
 
-        private SearchBudget(int remainingBlockScans, int remainingPathSearches) {
+        private SearchBudget(int remainingBlockScans, int remainingPathSearches, int remainingAStarNodes) {
             this.remainingBlockScans = remainingBlockScans;
             this.remainingPathSearches = remainingPathSearches;
+            this.remainingAStarNodes = remainingAStarNodes;
+        }
+
+        private boolean canExpandNode() {
+            return remainingAStarNodes > 0;
+        }
+
+        private void consumeNode() {
+            remainingAStarNodes--;
         }
 
         private boolean canScanBlock() {
@@ -415,6 +461,8 @@ public class AIRobotSearchBlock extends AIRobot {
         private final List<BlockPos> adjacentPositions;
         private int adjacentIndex;
         private LinkedList<BlockIndex> bestPath;
+        /** A* search for the current adjacent position that ran out of budget on an earlier tick. */
+        private AStarSearch activeSearch;
 
         private CandidateEvaluation(BlockPos target, List<BlockPos> adjacentPositions) {
             this.target = target;
