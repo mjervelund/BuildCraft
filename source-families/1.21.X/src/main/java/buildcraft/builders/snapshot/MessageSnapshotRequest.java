@@ -42,6 +42,12 @@ public class MessageSnapshotRequest{
                 // missing (or exposes the wrong world's copy).
                 Snapshot snapshot = GlobalSavedDataSnapshots.getSnapshotForConstruction(player.serverLevel(), message.key);
                 if (snapshot != null) {
+                    // A content hash is not a secret (it is in every blueprint item and tooltip request); only the
+                    // owner, an operator or a player who holds a blueprint for this content may download it.
+                    if (!SnapshotFetchAccess.canFetch(player, snapshot)) {
+                        BCLog.logger.debug("Refused a snapshot request from {}: no access", player.getUUID());
+                        return;
+                    }
                     Snapshot transientSnapshot = snapshot.copy();
                     transientSnapshot.key = new Snapshot.Key(transientSnapshot.key, (Snapshot.Header) null);
                     MessageManager.sendTo(new MessageSnapshotResponse(transientSnapshot), player);
