@@ -9,7 +9,9 @@ package buildcraft.builders.snapshot;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -418,7 +420,9 @@ public final class GlobalSavedDataSnapshots {
         try {
             temp = File.createTempFile(".buildcraft-blueprint-", ".tmp", target.getParentFile());
             try (FileOutputStream output = new FileOutputStream(temp)) {
-                NbtSquisher.squishVanilla(Snapshot.writeToNBT(snapshot), output);
+                // NbtIo.writeCompressed closes the stream it is given, which would close the descriptor before
+                // the fsync below (SyncFailedException on every filesystem). Keep the file open until it is synced.
+                NbtSquisher.squishVanilla(Snapshot.writeToNBT(snapshot), new NonClosingOutputStream(output));
                 output.getFD().sync();
             }
             try {
@@ -433,6 +437,23 @@ public final class GlobalSavedDataSnapshots {
             if (temp != null && temp.exists() && !temp.delete()) {
                 temp.deleteOnExit();
             }
+        }
+    }
+
+    /** Passes writes through but only flushes on close, so the caller can still fsync the underlying file. */
+    private static final class NonClosingOutputStream extends FilterOutputStream {
+        NonClosingOutputStream(OutputStream out) {
+            super(out);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            out.write(b, off, len);
+        }
+
+        @Override
+        public void close() throws IOException {
+            flush();
         }
     }
 
