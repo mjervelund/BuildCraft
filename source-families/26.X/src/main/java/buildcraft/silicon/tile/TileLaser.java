@@ -66,6 +66,10 @@ public class TileLaser extends TileBC_Neptune implements IDebuggable, GameEventL
     private BlockPos targetPos;
     public Vec3 laserPos;
     private boolean levelHasUpdated = true;
+    /** Game time of the last cone scan; event-driven rescans wait {@link #MIN_RESCAN_INTERVAL} ticks after it. */
+    private long lastScanTime = Long.MIN_VALUE / 2; // halved so gameTime - lastScanTime cannot overflow
+    /** A busy area (quarry, farm, builder) emits block events every tick; a full cone scan is ~450 positions. */
+    private static final long MIN_RESCAN_INTERVAL = 10;
 
     private final AverageLong avgPower = new AverageLong(100);
     private long averageClient;
@@ -194,9 +198,13 @@ public class TileLaser extends TileBC_Neptune implements IDebuggable, GameEventL
         BlockPos previousTargetPos = targetPos;
         // Chunk loads need not emit block-change game events. Rediscover targets periodically,
         // staggered by laser position to avoid synchronised rescans across large builds.
-        if (levelHasUpdated || (level.getGameTime() + worldPosition.asLong()) % 100L == 0L) {
+        // Removed targets need no rescan: isPowerNeededAt() re-resolves every candidate before it is used.
+        long gameTime = level.getGameTime();
+        if ((levelHasUpdated && gameTime - lastScanTime >= MIN_RESCAN_INTERVAL)
+            || (gameTime + worldPosition.asLong()) % 100L == 0L) {
             findPossibleTargets();
             levelHasUpdated = false;
+            lastScanTime = gameTime;
         }
 
         if (!isPowerNeededAt(targetPos)) {
