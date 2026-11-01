@@ -68,11 +68,10 @@ public class PatternPyramid extends Pattern implements IFillerPatternShape {
     }
     @Override
     public boolean fillTemplate(IFilledTemplate filledTemplate, IStatementParameter[] params) {
-        // noinspection RedundantCast
-        PyramidDir dir = params.length >= 2 && params[1] != null
-            ? PYRAMID_DIRS.get((PatternParameterCenter) params[1])
-            : PYRAMID_DIRS.get(PatternParameterCenter.CENTER);
-        int stepY = params.length >= 1 && params[0] != null && !(((PatternParameterYDir) params[0]).up) ? -1 : 1;
+        // Parameters come from the Filler GUI (client data) and from saved NBT, so they are not guaranteed to have the
+        // types this pattern created. A plain cast threw on every rebuild, including chunk load.
+        PyramidDir dir = PYRAMID_DIRS.get(getParam(1, params, PatternParameterCenter.CENTER));
+        int stepY = getParam(0, params, PatternParameterYDir.UP).up ? 1 : -1;
 
         int y = stepY == 1 ? 0 : filledTemplate.getMax().getY();
 
