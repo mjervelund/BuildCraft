@@ -302,13 +302,18 @@ public class RobotStationPluggable extends PipePluggable implements IDockingStat
 
     @Override
     public void writePayload(FriendlyByteBuf buffer, BCNetworkSide side) {
-        refreshRenderState();
-        buffer.writeByte(getRenderState().ordinal());
+        // The render state is computed on the server and only flows server -> client.
+        if (side == BCNetworkSide.SERVER) {
+            refreshRenderState();
+            buffer.writeByte(getRenderState().ordinal());
+        }
     }
 
     @Override
     public void readPayload(FriendlyByteBuf buffer, BCNetworkSide side, BCPacketContext ctx) throws IOException {
-        readState(buffer);
+        if (side == BCNetworkSide.CLIENT) {
+            readState(buffer);
+        }
     }
 
     public static RobotStationPluggable readFromNbt(PluggableDefinition definition, IPipeHolder holder, Direction side, net.minecraft.nbt.CompoundTag tag) {
