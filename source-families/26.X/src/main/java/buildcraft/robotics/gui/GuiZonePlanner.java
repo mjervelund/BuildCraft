@@ -6,8 +6,7 @@ package buildcraft.robotics.gui;
 
 import java.util.Map;
 
-import org.lwjgl.glfw.GLFW;
-
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 
@@ -790,9 +789,13 @@ public class GuiZonePlanner extends GuiBC8<ContainerZonePlanner> {
         super.containerTick();
     }
 
+    /** InputConstants has no constant for the keypad minus; look it up by name so it matches this version's key codes. */
+    private static final int KEY_NUMPAD_SUBTRACT = InputConstants.getKey("key.keyboard.keypad.subtract").getValue();
+
+    /** keyCode is this version's key code (an SDL scancode since 26.x), so compare with InputConstants, never GLFW. */
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (!fullscreen && nameField != null && nameField.isFocused()) {
-            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (keyCode == InputConstants.KEY_RETURN || keyCode == InputConstants.KEY_NUMPADENTER || keyCode == InputConstants.KEY_ESCAPE) {
                 clearNameFocus();
                 return true;
             }
@@ -801,18 +804,18 @@ public class GuiZonePlanner extends GuiBC8<ContainerZonePlanner> {
             }
         }
 
-        if (keyCode == GLFW.GLFW_KEY_F5) {
+        if (keyCode == InputConstants.KEY_F5) {
             ZonePlannerMapDataClient.INSTANCE.clearCache();
             invalidateMapTexture(true);
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_EQUAL || keyCode == GLFW.GLFW_KEY_KP_ADD) {
+        if (keyCode == InputConstants.KEY_EQUALS || keyCode == InputConstants.KEY_ADD) {
             return incBlocksPerPixel() || super.keyPressed(keyCode, scanCode, modifiers);
         }
-        if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
+        if (keyCode == InputConstants.KEY_MINUS || keyCode == KEY_NUMPAD_SUBTRACT) {
             return decBlocksPerPixel() || super.keyPressed(keyCode, scanCode, modifiers);
         }
-        if (keyCode == GLFW.GLFW_KEY_M) {
+        if (keyCode == InputConstants.KEY_M) {
             if (RenderCompat.hasInputShiftDown()) {
                 toFullscreen();
             } else {
@@ -820,7 +823,7 @@ public class GuiZonePlanner extends GuiBC8<ContainerZonePlanner> {
             }
             return true;
         }
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && fullscreen) {
+        if (keyCode == InputConstants.KEY_ESCAPE && fullscreen) {
             toWindowed();
             return true;
         }
