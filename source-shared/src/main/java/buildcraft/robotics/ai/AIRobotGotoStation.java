@@ -43,7 +43,8 @@ public class AIRobotGotoStation extends AIRobot {
             int targetX = station.x() + dx;
             int targetY = station.y() + dy;
             int targetZ = station.z() + dz;
-            startDelegateAI(new AIRobotGotoBlock(robot, targetX, targetY, targetZ, pathRangeTo(targetX, targetY, targetZ)));
+            startDelegateAI(new AIRobotGotoBlock(robot, targetX, targetY, targetZ, pathRangeTo(targetX, targetY, targetZ))
+                    .forStationReturn(station.x(), station.y(), station.z()));
         } else {
             setSuccess(false);
             terminate();
