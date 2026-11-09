@@ -94,8 +94,11 @@ public class MessageUpdateTile {
 
             BlockEntity tile = level.getBlockEntity(message.pos);
             if (!(tile instanceof IPayloadReceiver receiver)) {
-                if (clientSide) {
-                    BCLog.logger.warn("Dropped BuildCraft tile update for missing/incompatible tile at {}", message.pos);
+                // No tile yet is expected: an update sent mid-tick reaches the client before the end-of-tick block
+                // change that creates the tile (thousands per large build), and the block-entity data packet that
+                // follows carries the full render state. Only a tile of the wrong type is worth a warning.
+                if (clientSide && tile != null) {
+                    BCLog.logger.warn("Dropped BuildCraft tile update for incompatible tile {} at {}", tile.getClass().getName(), message.pos);
                 }
                 return;
             }
