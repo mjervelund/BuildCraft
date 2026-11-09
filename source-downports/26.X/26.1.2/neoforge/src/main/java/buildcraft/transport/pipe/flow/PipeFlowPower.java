@@ -99,6 +99,7 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
     }
 
     private void restorePowerTransfer(PowerTransferState state) {
+        asleep = false;
         currentWorldTime = state.time();
         state.states().forEach((face, value) -> {
             Section s = sections.get(face);
@@ -114,6 +115,13 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
     private final EnumFlow[] lastObservedFlows = new EnumFlow[Direction.values().length];
     private final int[] lastObservedDisplayPower = new int[Direction.values().length];
     private boolean networkUpdatePending;
+    /**
+     * Set at the end of a server tick that left nothing behind: no power buffered or queued, no request from any side,
+     * display averages at zero and no packet pending. While it is set every section is all zero, so onTick skips the
+     * section step and the routing, display and request passes, and only polls the local consumers. Anything that
+     * adds power or a request goes through {@link #step()} or {@link Section#receivePowerInternal}, which clear it.
+     */
+    private boolean asleep;
 
     public PipeFlowPower(IPipe pipe) {
         super(pipe);
@@ -155,7 +163,12 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
     }
 
     public boolean requiresPeriodicSave() {
-        return sections.values().stream().anyMatch(section -> section.internalPower > 0 || section.internalNextPower > 0);
+        for (Section section : sections.values()) {
+            if (section.internalPower > 0 || section.internalNextPower > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void writePayload(int id, FriendlyByteBuf buffer, BCNetworkSide side) {
@@ -222,6 +235,7 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
     }
 
     public void reconfigure() {
+        asleep = false;
         PipeEventPower.Configure configure = new PipeEventPower.Configure(pipe.getHolder(), this);
         PipeApi.PowerTransferInfo transferInfo = PipeApi.getPowerTransferInfo(pipe.getDefinition());
         configure.setReceiver(transferInfo.isReceiver);
@@ -480,6 +494,15 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
             return;
         }
 
+        if (asleep) {
+            // Every section is zero, so stepping them would change nothing: only advance the clock.
+            currentWorldTime = pipe.getHolder().getPipeWorld().getGameTime();
+            if (!hasLocalDemand()) {
+                return;
+            }
+            asleep = false;
+        }
+
         step();
 
 
@@ -641,9 +664,35 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
             sendPayload(NET_POWER_AMOUNTS);
             networkUpdatePending = false;
         }
+        asleep = isQuiet();
+    }
+
+    private boolean isQuiet() {
+        if (networkUpdatePending) {
+            return false;
+        }
+        for (Section s : sections.values()) {
+            if (s.internalPower != 0 || s.internalNextPower != 0 || s.powerQuery != 0 || s.nextPowerQuery != 0
+                || s.displayPower != 0 || s.powerAverage.getAverage() != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** True if a machine or pluggable next to this pipe asks for power (what the full tick would request). */
+    private boolean hasLocalDemand() {
+        for (Direction face : Direction.values()) {
+            IMjReceiver recv = getPowerSink(face);
+            if (recv != null && recv.canReceive() && recv.getPowerRequested() > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void step() {
+        asleep = false;
         transferJournal.record();
         ensureConfigured();
         long now = pipe.getHolder().getPipeWorld().getGameTime();
@@ -784,6 +833,7 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
         }
 
         long receivePowerInternal(long sent) {
+            asleep = false;
             transferJournal.record();
             ensureConfigured();
             if (disabled || sent <= 0) {
