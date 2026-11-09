@@ -510,7 +510,10 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
                         Section s2 = sections.get(face2);
                         long routeWeight = routeWeights.getOrDefault(face2, 0L);
                         if (s2.powerQuery > 0 && routeWeight > 0) {
-                            long offeredInput = allocation.offer(s.internalPower, s2.powerQuery, routeWeight);
+                            // Never push more through a face than its demand plus this pipe's loss: the surplus stays
+                            // here for the next request instead of filling every downstream pipe first.
+                            long offeredInput = Math.min(allocation.offer(s.internalPower, s2.powerQuery, routeWeight),
+                                grossForLoss(s2.powerQuery));
                             offeredInput = apiPowerLimit(buildcraft.api.v2.pipe.PowerMovementPhase.SEND,
                                 face2, offeredInput, false);
 
@@ -593,7 +596,7 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
                     query = Math.min(maxPower, saturatingAdd(query, sections.get(face2).powerQuery));
                 }
             }
-            transferQueryTemp[face.ordinal()] = query;
+            transferQueryTemp[face.ordinal()] = grossForLoss(query);
         }
 
         // Transfer requested power to neighbouring pipes
@@ -705,7 +708,20 @@ public class PipeFlowPower extends PipeFlow implements IFlowPower, IDebuggable {
                 req = saturatingAdd(req, sections.get(face).getEffectivePowerQuery());
             }
         }
-        return Math.min(req, maxPower);
+        return grossForLoss(req);
+    }
+
+    /**
+     * The power this pipe needs to receive so that {@code delivered} still arrives after its own resistance. Demand is
+     * passed upstream through this, so the loss is paid by the sources instead of being taken out of what the
+     * consumers asked for: without it a source only ever injects the raw demand and every consumer behind a few
+     * dozen pipes is starved, however much power the engines have.
+     */
+    private long grossForLoss(long delivered) {
+        if (delivered <= 0) {
+            return 0;
+        }
+        return Math.min(maxPower, EnergyMath.inputForDelivered(delivered, maxPower, powerResistance, MjAmount.MICRO_MJ_PER_MJ));
     }
 
     private long applyResistance(long input) {
