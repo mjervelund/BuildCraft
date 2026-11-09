@@ -35,6 +35,7 @@ import buildcraft.lib.fluid.FluidDisplayHelper;
 import buildcraft.lib.fluid.FluidSmoother;
 import buildcraft.lib.fluid.FuelApiBridge;
 import buildcraft.lib.fluid.Tank;
+import buildcraft.lib.gui.TankContainerData;
 import buildcraft.lib.misc.FakePlayerProvider;
 import buildcraft.lib.misc.FluidStackUtil;
 import buildcraft.transport.BCTransportPipes;
@@ -148,6 +149,34 @@ public final class FluidCompatibilityGameTests {
             "tank menu synchronized only the clicked block instead of the logical column");
         require(helper, menu.getTankCapacity() == 32 * FluidType.BUCKET_VOLUME,
             "tank menu synchronized local capacity instead of whole-column capacity");
+        helper.succeed();
+    }
+
+    /** Upstream e7387f66: GuiTank's TankComponent reads menu.data as packed 16-bit word pairs
+     * (TankContainerData layout: fluid id @0, amount @2, capacity @8). The menu exposed three
+     * unsplit ints instead, so an empty tank displayed its capacity as an amount of minecraft:empty. */
+    @GameTest(templateNamespace = BCLib.MODID, template = EMPTY_TEMPLATE, timeoutTicks = 20)
+    public static void tankMenuDataUsesTankComponentPackedLayout(GameTestHelper helper) {
+        TileTank tank = placeTank(helper, new BlockPos(1, 1, 1));
+        Player player = FakePlayerProvider.INSTANCE.getBuildCraftPlayer(helper.getLevel());
+
+        ContainerTank empty = new ContainerTank(1, player.getInventory(), tank,
+            ContainerLevelAccess.create(helper.getLevel(), tank.getBlockPos()));
+        require(helper, empty.data.getCount() >= 10,
+            "tank menu data is shorter than the TankComponent layout: " + empty.data.getCount());
+        require(helper, TankContainerData.getPacked(empty.data, 2) == 0,
+            "empty tank GUI reads amount " + TankContainerData.getPacked(empty.data, 2));
+        require(helper, TankContainerData.getPacked(empty.data, 8) == 16 * FluidType.BUCKET_VOLUME,
+            "tank GUI reads capacity " + TankContainerData.getPacked(empty.data, 8));
+
+        int amount = 5 * FluidType.BUCKET_VOLUME;
+        tank.tank.setFluid(new FluidStack(Fluids.WATER, amount));
+        ContainerTank filled = new ContainerTank(2, player.getInventory(), tank,
+            ContainerLevelAccess.create(helper.getLevel(), tank.getBlockPos()));
+        require(helper, TankContainerData.getFluid(TankContainerData.getPacked(filled.data, 0)) == Fluids.WATER,
+            "tank GUI reads fluid id " + TankContainerData.getPacked(filled.data, 0));
+        require(helper, TankContainerData.getPacked(filled.data, 2) == amount,
+            "tank GUI reads amount " + TankContainerData.getPacked(filled.data, 2));
         helper.succeed();
     }
 
