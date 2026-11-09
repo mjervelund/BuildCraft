@@ -46,14 +46,17 @@ public class AIRobotGoAndLinkToDock extends AIRobot {
             return;
         }
 
+        // Approach from the cell just outside the station face, like AIRobotGotoStation. Two blocks out can be
+        // inside a wall or the ground, and then no route was found at all.
         Direction side = station.side();
         int dx = side == null ? 0 : side.getStepX();
         int dy = side == null ? 0 : side.getStepY();
         int dz = side == null ? 0 : side.getStepZ();
-        int targetX = station.x() + dx * 2;
-        int targetY = station.y() + dy * 2;
-        int targetZ = station.z() + dz * 2;
-        startDelegateAI(new AIRobotGotoBlock(robot, targetX, targetY, targetZ, pathRangeTo(targetX, targetY, targetZ)));
+        int targetX = station.x() + dx;
+        int targetY = station.y() + dy;
+        int targetZ = station.z() + dz;
+        startDelegateAI(new AIRobotGotoBlock(robot, targetX, targetY, targetZ, pathRangeTo(targetX, targetY, targetZ))
+                .forStationReturn(station.x(), station.y(), station.z()));
     }
 
     @Override

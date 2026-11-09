@@ -31,6 +31,13 @@ public class AIRobotGotoBlock extends AIRobotGoto {
     private int repathAttempts;
     private static final int MAX_REPATH_ATTEMPTS = 3;
 
+    // Only station returns opt in; work-target routes keep the bounded single-tick search.
+    private static final int RETURN_NODES_PER_TICK = 1024;
+    private static final int RETURN_CHUNK_RETRY_TICKS = 40;
+    private boolean stationReturn;
+    private int returnStationX, returnStationY, returnStationZ;
+    private RobotStationPathPlanner stationPlanner;
+
     public AIRobotGotoBlock(EntityRobotBase robot) {
         super(robot);
     }
@@ -59,9 +66,27 @@ public class AIRobotGotoBlock extends AIRobotGoto {
         }
     }
 
+    /**
+     * Route to a docking station with the incremental {@link RobotStationPathPlanner}: it follows any passable route,
+     * however long or winding, instead of the work search's distance sphere and single-tick node cap.
+     */
+    public AIRobotGotoBlock forStationReturn(int stationX, int stationY, int stationZ) {
+        stationReturn = true;
+        returnStationX = stationX;
+        returnStationY = stationY;
+        returnStationZ = stationZ;
+        return this;
+    }
+
     @Override
     public void start() {
         robot.undock();
+    }
+
+    @Override
+    public int getEnergyCost() {
+        // Searching for a route is not travel: no battery cost before the route is ready.
+        return stationReturn && path == null ? 0 : super.getEnergyCost();
     }
 
     @Override
@@ -79,7 +104,25 @@ public class AIRobotGotoBlock extends AIRobotGoto {
             if (robot.level().getGameTime() < nextRepathTick) return;
             ?*/
             //?}
-            path = findPath();
+            if (stationReturn) {
+                long now = robotLevel().getGameTime();
+                if (stationPlanner == null) {
+                    stationPlanner = new RobotStationPathPlanner(robotLevel(), robot.blockPosition(),
+                        new BlockPos(returnStationX, returnStationY, returnStationZ),
+                        new BlockPos(finalX, finalY, finalZ));
+                }
+                RobotStationPathPlanner.Result result = stationPlanner.advance(robotLevel(), RETURN_NODES_PER_TICK);
+                if (result == RobotStationPathPlanner.Result.SEARCHING) return;
+                if (result == RobotStationPathPlanner.Result.WAITING_FOR_CHUNKS) {
+                    stationPlanner = null;
+                    nextRepathTick = now + RETURN_CHUNK_RETRY_TICKS;
+                    return;
+                }
+                path = result == RobotStationPathPlanner.Result.FOUND ? stationPlanner.path() : null;
+                stationPlanner = null;
+            } else {
+                path = findPath();
+            }
             if (path == null || path.isEmpty()) {
                 setSuccess(false);
                 terminate();
@@ -298,12 +341,23 @@ public class AIRobotGotoBlock extends AIRobotGoto {
         return out;
     }
 
+    private Level robotLevel() {
+        //? if <1.20 {
+        return robot.level;
+        //?} else {
+        /*?
+        return robot.level();
+        ?*/
+        //?}
+    }
+
     private record PathNode(BlockPos pos, double score, long sequence) {
     }
 
     @Override
     public void end() {
         robot.setDeltaMovement(Vec3.ZERO);
+        stationPlanner = null;
     }
 
     @Override
@@ -317,6 +371,12 @@ public class AIRobotGotoBlock extends AIRobotGoto {
         nbt.putInt("finalY", finalY);
         nbt.putInt("finalZ", finalZ);
         nbt.putDouble("maxDistance", maxDistance);
+        nbt.putBoolean("stationReturn", stationReturn);
+        if (stationReturn) {
+            nbt.putInt("returnStationX", returnStationX);
+            nbt.putInt("returnStationY", returnStationY);
+            nbt.putInt("returnStationZ", returnStationZ);
+        }
     }
 
     @Override
@@ -325,6 +385,13 @@ public class AIRobotGotoBlock extends AIRobotGoto {
         finalY = nbt.getInt("finalY");
         finalZ = nbt.getInt("finalZ");
         maxDistance = nbt.getDouble("maxDistance");
+        stationReturn = nbt.getBoolean("stationReturn");
+        if (stationReturn) {
+            returnStationX = nbt.getInt("returnStationX");
+            returnStationY = nbt.getInt("returnStationY");
+            returnStationZ = nbt.getInt("returnStationZ");
+        }
+        stationPlanner = null; // The search is transient; it restarts after a reload.
         loadedFromNBT = true;
     }
 }
