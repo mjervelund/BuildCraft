@@ -353,6 +353,14 @@ public class TilePipeHolder extends TileBC_Neptune implements IPipeHolder, IDebu
 
     public void onNeighbourBlockChanged(BlockState state, BlockPos neighbour) {
         super.onNeighbourBlockChanged(state, neighbour);
+        // NeoForge's onNeighborChange also fires every time a horizontal neighbour's block entity calls setChanged
+        // (Level.updateNeighbourForOutputSignal). A neighbouring pipe saving its flow state is not a topology change:
+        // placing, removing or re-plugging a pipe also arrives through neighbourBlockChanged, and a pipe whose
+        // connections changed marks its neighbours itself (Pipe.updateConnections). Rescanning here made every
+        // pipe next to a working pipe re-check all six sides every tick.
+        if (level != null && level.getBlockEntity(neighbour) instanceof TilePipeHolder) {
+            return;
+        }
         markPipeTopologyDirty();
     }
 
