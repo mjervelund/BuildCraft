@@ -244,7 +244,7 @@ public final class ElectronicLibraryGameTests {
         Snapshot.Key uploadKey = findListed(clientOnly.key);
         require(uploadKey != null && uploadKey.header != null, "the client-only blueprint is not listed with a header");
 
-        library.selected = uploadKey; // ContainerElectronicLibrary ID_SELECTED
+        library.selectForUpload(playerA, uploadKey); // ContainerElectronicLibrary ID_SELECTED from player A
         library.invUpIn.setStackInSlot(0, ItemSnapshot.getClean(EnumSnapshotType.BLUEPRINT));
         for (int i = 0; i <= TileElectronicLibrary.TRANSFER_TIME + 1; i++) {
             library.update();
