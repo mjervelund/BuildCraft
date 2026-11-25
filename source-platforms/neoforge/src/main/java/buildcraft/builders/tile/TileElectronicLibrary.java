@@ -106,7 +106,11 @@ public class TileElectronicLibrary extends TileBC_Neptune implements MenuProvide
     private static final long MAX_UPLOAD_EXPANDED_BYTES = 64L * 1024 * 1024;
     private static final long MAX_UPLOAD_NBT_DECODE_BUDGET = 20_000_000L;
 
+    /** The blueprint the upload side works on: the latest selection made by a player at this library. Each
+     * player's GUI shows its own selection (ContainerElectronicLibrary); only this one drives the upload. */
     public Snapshot.Key selected = null;
+    /** Who made {@link #selected}; the upload request goes to this player only. Synced for the GUI. */
+    public UUID selectedBy = null;
     private int progressDown = -1;
     private int progressUp = -1;
     private int progressDownLast = -1;
@@ -129,6 +133,42 @@ public class TileElectronicLibrary extends TileBC_Neptune implements MenuProvide
         Snapshot.Header header = ItemSnapshot.getHeader(invDownIn.getStackInSlot(0));
         return header == null || level == null ? null
             : GlobalSavedDataSnapshots.getSnapshotForConstruction(level, header.key);
+    }
+
+    /** A player chose {@code key} in the library GUI (or cleared their choice with null). */
+    public void selectForUpload(Player player, Snapshot.Key key) {
+        UUID playerId = player.getUUID();
+        if (key == null) {
+            if (selectedBy == null || !selectedBy.equals(playerId)) {
+                // Clearing your own choice does not clear what another player selected.
+                return;
+            }
+            selected = null;
+            selectedBy = null;
+        } else {
+            selected = key;
+            selectedBy = playerId;
+        }
+        sendNetworkUpdate(NET_RENDER_DATA);
+    }
+
+    public boolean isSelectedBy(UUID playerId) {
+        return selected != null && playerId != null && playerId.equals(selectedBy);
+    }
+
+    /** The player whose client is asked for the selected blueprint: the one who selected it, with this library open. */
+    public boolean isUploadRequester(ServerPlayer player) {
+        return player != null && isSelectedBy(player.getUUID())
+            && player.containerMenu instanceof ContainerElectronicLibrary menu && menu.tile == this
+            && menu.stillValid(player);
+    }
+
+    private ServerPlayer findUploadRequester() {
+        if (selectedBy == null || level == null || level.getServer() == null) {
+            return null;
+        }
+        ServerPlayer player = level.getServer().getPlayerList().getPlayer(selectedBy);
+        return isUploadRequester(player) ? player : null;
     }
 
     private Snapshot.Header getSelectedHeader() {
@@ -208,7 +248,12 @@ public class TileElectronicLibrary extends TileBC_Neptune implements MenuProvide
                 if (cached != null && sameContentKey(cached.key, selected)) {
                     finishUpload(cached, selectedHeader);
                 } else {
-                    sendNetworkGuiUpdate(NET_UP);
+                    // Only the player who selected the blueprint has it in their client library; asking every
+                    // viewer made other clients answer (and get refused) or upload a different selection.
+                    ServerPlayer requester = findUploadRequester();
+                    if (requester != null) {
+                        sendNetworkUpdate(NET_UP, requester);
+                    }
                 }
                 progressUp = -1;
             } else {
@@ -294,6 +339,10 @@ public class TileElectronicLibrary extends TileBC_Neptune implements MenuProvide
                 buffer.writeBoolean(selected != null);
                 if (selected != null) {
                     selected.writeToByteBuf(buffer);
+                    buffer.writeBoolean(selectedBy != null);
+                    if (selectedBy != null) {
+                        buffer.writeUUID(selectedBy);
+                    }
                 }
             }
             if (id == NET_DOWN) {
@@ -317,8 +366,10 @@ public class TileElectronicLibrary extends TileBC_Neptune implements MenuProvide
             if (id == NET_RENDER_DATA) {
                 if (buffer.readBoolean()) {
                     selected = new Snapshot.Key(buffer);
+                    selectedBy = buffer.readBoolean() ? buffer.readUUID() : null;
                 } else {
                     selected = null;
+                    selectedBy = null;
                 }
             }
             if (id == NET_DOWN) {
@@ -438,7 +489,7 @@ public class TileElectronicLibrary extends TileBC_Neptune implements MenuProvide
                     // Owner identity is deliberately irrelevant here. The actual sender only needs to be
                     // interacting with this library; ownership in BuildCraft is attribution for automated
                     // actions, not an ACL that makes machines private.
-                    if (selected == null || !selected.equals(key)
+                    if (selected == null || !selected.equals(key) || !isSelectedBy(playerId)
                         || !isCleanSnapshot(invUpIn.getStackInSlot(0))
                         || !invUpOut.getStackInSlot(0).isEmpty()) {
                         throw new DecoderException("Electronic-library upload no longer matches the active transfer");
