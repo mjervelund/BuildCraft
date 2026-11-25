@@ -44,7 +44,11 @@ public class GuiElectronicLibrary extends GuiBC8<ContainerElectronicLibrary> {
         : (int) (RECT_SNAPSHOT_LIST.height / SNAPSHOT_ROW_HEIGHT);
     private static final GuiRectangle RECT_DELETE_BUTTON = new GuiRectangle(174, 109, 25, 15);
 
+    private static final int SCROLL_BAR_WIDTH = 2;
+
     private final GuiButtonDrawable delButton;
+    /** Index of the first listed blueprint; the list shows MAX_VISIBLE_SNAPSHOTS rows from here. */
+    private int scrollOffset = 0;
 
     public GuiElectronicLibrary(ContainerElectronicLibrary container, Inventory inv, Component title) {
         super(container, inv, title, SIZE_X, SIZE_Y);
@@ -68,8 +72,9 @@ public class GuiElectronicLibrary extends GuiBC8<ContainerElectronicLibrary> {
     }
 
     private void onDelButtonClick(IButtonClickEventTrigger button, int buttonKey) {
-        if (container.tile.selected != null) {
-            Snapshot snapshot = GlobalSavedDataSnapshots.getClientSnapshot(container.tile.selected);
+        Snapshot.Key mine = container.getSelected();
+        if (mine != null) {
+            Snapshot snapshot = GlobalSavedDataSnapshots.getClientSnapshot(mine);
             if (snapshot != null) {
                 container.sendSelectedToServer(null);
                 GlobalSavedDataSnapshots.removeClientSnapshot(snapshot.key);
@@ -83,17 +88,32 @@ public class GuiElectronicLibrary extends GuiBC8<ContainerElectronicLibrary> {
         ICON_GUI.drawAt(guiGraphics, mainGui.rootElement);
         drawHorizontalProgress(guiGraphics, RECT_PROGRESS_DOWN, ICON_PROGRESS_DOWN, container.tile.getDownloadProgress(partialTicks), true);
         drawHorizontalProgress(guiGraphics, RECT_PROGRESS_UP, ICON_PROGRESS_UP, container.tile.getUploadProgress(partialTicks), false);
+        Snapshot.Key mine = container.getSelected();
+        List<Snapshot.Key> list = GlobalSavedDataSnapshots.getClientSnapshotList();
+        scrollOffset = LibraryListScroll.clamp(scrollOffset, list.size(), MAX_VISIBLE_SNAPSHOTS);
+        int textWidth = (int) RECT_SNAPSHOT_LIST.width - (list.size() > MAX_VISIBLE_SNAPSHOTS ? SCROLL_BAR_WIDTH + 2 : 0);
         iterateSnapshots((i, rect, key) -> {
-            boolean isSelected = key.equals(container.tile.selected);
+            // Highlight this player's own selection, not whatever another player at the library clicked last.
+            boolean isSelected = key.equals(mine);
             if (isSelected) {
                 drawGradientRect(guiGraphics, rect, 0xFF_55_55_55, 0xFF_55_55_55);
             }
             int colour = isSelected ? 0xffffa0 : 0xe0e0e0;
             Header header = key.header;
             String text = header == null ? key.toString() : header.name;
-            drawString(guiGraphics, font, fitSnapshotName(text, (int) rect.width), rect.x, rect.y, colour);
+            drawString(guiGraphics, font, fitSnapshotName(text, textWidth), rect.x, rect.y, colour);
         });
-        delButton.enabled = GlobalSavedDataSnapshots.getClientSnapshot(container.tile.selected) != null;
+        int[] thumb = LibraryListScroll.thumb(scrollOffset, list.size(), MAX_VISIBLE_SNAPSHOTS,
+            (int) RECT_SNAPSHOT_LIST.height);
+        if (thumb != null) {
+            double barX = mainGui.rootElement.getX() + RECT_SNAPSHOT_LIST.x + RECT_SNAPSHOT_LIST.width - SCROLL_BAR_WIDTH;
+            double barY = mainGui.rootElement.getY() + RECT_SNAPSHOT_LIST.y;
+            drawGradientRect(guiGraphics, new GuiRectangle(barX, barY, SCROLL_BAR_WIDTH, RECT_SNAPSHOT_LIST.height),
+                0xFF_33_33_33, 0xFF_33_33_33);
+            drawGradientRect(guiGraphics, new GuiRectangle(barX, barY + thumb[0], SCROLL_BAR_WIDTH, thumb[1]),
+                0xFF_A0_A0_A0, 0xFF_A0_A0_A0);
+        }
+        delButton.enabled = GlobalSavedDataSnapshots.getClientSnapshot(mine) != null;
     }
 
 
@@ -135,13 +155,30 @@ public class GuiElectronicLibrary extends GuiBC8<ContainerElectronicLibrary> {
         List<Snapshot.Key> list = GlobalSavedDataSnapshots.getClientSnapshotList();
         GuiRectangle rect = new GuiRectangle(mainGui.rootElement.getX() + RECT_SNAPSHOT_LIST.x,
             mainGui.rootElement.getY() + RECT_SNAPSHOT_LIST.y, RECT_SNAPSHOT_LIST.width, SNAPSHOT_ROW_HEIGHT);
-        int max = Math.min(list.size(), MAX_VISIBLE_SNAPSHOTS);
-        for (int i = 0; i < max; i++) {
+        int first = LibraryListScroll.clamp(scrollOffset, list.size(), MAX_VISIBLE_SNAPSHOTS);
+        int end = Math.min(list.size(), first + MAX_VISIBLE_SNAPSHOTS);
+        for (int i = first; i < end; i++) {
             iterator.call(i, rect, list.get(i));
             rect = rect.offset(0, SNAPSHOT_ROW_HEIGHT);
         }
     }
     
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        double left = mainGui.rootElement.getX() + RECT_SNAPSHOT_LIST.x;
+        double top = mainGui.rootElement.getY() + RECT_SNAPSHOT_LIST.y;
+        if (mouseX >= left && mouseX < left + RECT_SNAPSHOT_LIST.width && mouseY >= top
+            && mouseY < top + RECT_SNAPSHOT_LIST.height) {
+            int size = GlobalSavedDataSnapshots.getClientSnapshotList().size();
+            int next = LibraryListScroll.scroll(scrollOffset, scrollY, size, MAX_VISIBLE_SNAPSHOTS);
+            if (next != scrollOffset) {
+                scrollOffset = next;
+                return true;
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
 
     @Override
 	public boolean mouseClicked(double mouseX, double mouseY, int mouseButton){

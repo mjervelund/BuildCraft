@@ -16,7 +16,6 @@ import buildcraft.lib.gui.MenuBC_Neptune;
 import buildcraft.lib.gui.slot.SlotBase;
 import buildcraft.lib.gui.slot.SlotOutput;
 import buildcraft.lib.misc.data.IdAllocator;
-import buildcraft.lib.tile.TileBC_Neptune;
 import buildcraft.lib.tile.item.ItemHandlerSimple;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
@@ -27,7 +26,7 @@ import buildcraft.lib.net.BCPacketContext;
 
 public class ContainerElectronicLibrary extends ContainerBCTile<TileElectronicLibrary> {
     private static final IdAllocator IDS = MenuBC_Neptune.IDS.makeChild("electronic_library");
-    private static final int ID_SELECTED = IDS.allocId("SELECTED");
+    public static final int ID_SELECTED = IDS.allocId("SELECTED");
     
 	public ContainerElectronicLibrary(int containerId, Inventory playerInventory, FriendlyByteBuf buf) {
 		this(containerId, playerInventory, new ItemHandlerSimple(1), new ItemHandlerSimple(1), 
@@ -73,7 +72,22 @@ public class ContainerElectronicLibrary extends ContainerBCTile<TileElectronicLi
         return IDS;
     }
 
+    /** Client side: this player's own selection in the list (null until the player picks one). */
+    private Snapshot.Key selected = null;
+    private boolean selectionChosen = false;
+
+    /** Client side: what this player's GUI shows as selected. Before the player picks anything, that is the
+     * library's upload selection if this player made it (e.g. before closing and reopening the GUI). */
+    public Snapshot.Key getSelected() {
+        if (selectionChosen) {
+            return selected;
+        }
+        return tile != null && tile.isSelectedBy(playerInventory.player.getUUID()) ? tile.selected : null;
+    }
+
     public void sendSelectedToServer(Snapshot.Key selected) {
+        this.selected = selected;
+        this.selectionChosen = true;
         sendMessage(ID_SELECTED, buffer -> {
             buffer.writeBoolean(selected != null);
             if (selected != null) {
@@ -87,12 +101,10 @@ public class ContainerElectronicLibrary extends ContainerBCTile<TileElectronicLi
         super.readMessage(id, buffer, side, ctx);
         if (side == BCNetworkSide.SERVER) {
             if (id == ID_SELECTED) {
-                if (buffer.readBoolean()) {
-                    tile.selected = new Snapshot.Key(buffer);
-                } else {
-                    tile.selected = null;
-                }
-                tile.sendNetworkUpdate(TileBC_Neptune.NET_RENDER_DATA);
+                Snapshot.Key key = buffer.readBoolean() ? new Snapshot.Key(buffer) : null;
+                // Per player: the selection is recorded with who made it, so only that player's client is asked
+                // for the blueprint, and another player's selection does not change this player's GUI.
+                tile.selectForUpload(playerInventory.player, key);
             }
         }
     }
