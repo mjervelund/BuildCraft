@@ -305,7 +305,7 @@ public final class GlobalSavedDataSnapshots {
     }
 
     @Nullable
-    private static Snapshot validatedCopy(Snapshot snapshot) {
+    static Snapshot validatedCopy(Snapshot snapshot) {
         if (snapshot == null || snapshot.key == null) {
             return null;
         }
@@ -313,7 +313,10 @@ public final class GlobalSavedDataSnapshots {
             Snapshot copy = snapshot.copy();
             Snapshot.Key originalKey = copy.key;
             copy.computeKey();
-            if (!sameContentKey(originalKey, copy.key)) {
+            // copy() already recomputes the key, so originalKey is the computed one too and comparing the two
+            // checked nothing. Compare the content with the key the snapshot came with (file, upload, scan).
+            if (!sameContentKey(snapshot.key, copy.key)) {
+                BCLog.logger.debug("Snapshot content does not match its key " + snapshot.key + " (content " + copy.key + ")");
                 return null;
             }
             if (originalKey.header != null && !sameContentKey(originalKey.header.key, copy.key)) {
