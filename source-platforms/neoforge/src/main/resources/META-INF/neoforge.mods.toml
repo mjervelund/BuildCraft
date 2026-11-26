@@ -13,6 +13,8 @@ showAsResourcePack=false
     modId="buildcraftlib"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Library"
+    iconFile="icons/buildcraftlib.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -65,6 +67,8 @@ Shared library code and runtime helpers used by the BuildCraft Community Edition
     modId="buildcraftcore"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Core"
+    iconFile="icons/buildcraftcore.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -96,6 +100,8 @@ Core BuildCraft content: common items, gears, engines, markers and shared gamepl
     modId="buildcraftfactory"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Factory"
+    iconFile="icons/buildcraftfactory.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -134,6 +140,8 @@ Factory machines and fluid infrastructure, including tanks, pumps, mining wells 
     modId="buildcrafttransport"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Transport"
+    iconFile="icons/buildcrafttransport.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -172,6 +180,8 @@ Item, fluid and power pipes, gates, wires, facades, plugs and transport automati
     modId="buildcraftenergy"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Energy"
+    iconFile="icons/buildcraftenergy.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -210,6 +220,8 @@ Oil, fuels, power generation and energy-related BuildCraft mechanics.
     modId="buildcraftbuilders"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Builders"
+    iconFile="icons/buildcraftbuilders.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -248,6 +260,8 @@ Builder module content such as quarries, fillers, frames, markers, templates and
     modId="buildcraftsilicon"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Silicon"
+    iconFile="icons/buildcraftsilicon.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -286,6 +300,8 @@ Silicon technology: lasers, assembly tables, integration tables, programming tab
     modId="buildcraftrobotics"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Robotics"
+    iconFile="icons/buildcraftrobotics.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft team and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
@@ -338,6 +354,8 @@ Robots, docking stations, redstone boards, zones and robotic automation.
     modId="buildcraftcompat"
     version="${mod_version}"
     displayName="BuildCraft Community Edition - Compat"
+    iconFile="icons/buildcraftcompat.png"
+    iconBlur=false
     credits="Special thanks to the original BuildCraft and Forestry teams and all contributors."
     authors="CurativeTree, ShipovskijKorp"
     description='''
